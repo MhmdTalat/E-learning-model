@@ -26,26 +26,89 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { enrollmentsAPI, studentsAPI, coursesAPI } from '@/lib/api';
+import { enrollmentsAPI, studentsAPI, coursesAPI, departmentsAPI } from '@/lib/api';
 
 interface Enrollment {
   id?: number;
   enrollmentId?: number;
+  enrollmentID?: number;
   studentId?: number;
   studentID?: number;
   courseId?: number;
   courseID?: number;
   enrollmentDate?: string;
-  grade?: string;
+  grade?: string | number;
   studentName?: string;
+  studentEmail?: string;
   courseName?: string;
+  credits?: number;
+  departmentId?: number;
+  departmentID?: number;
+  departmentName?: string;
 }
+
+interface Student {
+  id?: number;
+  studentID?: number;
+  firstMidName?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+
+interface Course {
+  id?: number;
+  courseID?: number;
+  title?: string;
+  courseName?: string;
+  name?: string;
+}
+
+// API raw types to avoid `any` and satisfy eslint
+type ApiCourse = {
+  id?: number;
+  courseID?: number;
+  title?: string;
+  courseName?: string;
+  name?: string;
+  credits?: number;
+  Credits?: number;
+  departmentID?: number;
+  DepartmentID?: number;
+  departmentId?: number;
+};
+
+type ApiDept = {
+  id?: number;
+  departmentID?: number;
+  name?: string;
+  Name?: string;
+};
+
+type ApiEnrollment = {
+  id?: number;
+  enrollmentId?: number;
+  enrollmentID?: number;
+  studentId?: number;
+  studentID?: number;
+  courseId?: number;
+  courseID?: number;
+  enrollmentDate?: string;
+  grade?: string | number;
+  studentName?: string;
+  studentEmail?: string;
+  courseName?: string;
+  credits?: number;
+  departmentId?: number;
+  departmentID?: number;
+  departmentName?: string;
+};
 
 const Enrollments = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [students, setStudents] = useState<any[]>([]);
-  const [courses, setCourses] = useState<any[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openAddDialog, setOpenAddDialog] = useState(false);
@@ -63,35 +126,62 @@ const Enrollments = () => {
       try {
         setLoading(true);
         setError(null);
-        const response = await enrollmentsAPI.getAll();
-        
-        console.log('[Enrollments API Response]', response);
-        
-        // Handle the response - ensure it's always an array
-        let enrollmentData = response.data;
+        // Try to fetch enrollments, courses and departments so we can merge department info client-side
+        const [eRes, cRes, dRes] = await Promise.all([
+          enrollmentsAPI.getAll().catch(() => ({ data: [] })),
+          coursesAPI.getAll().catch(() => ({ data: [] })),
+          departmentsAPI.getAll().catch(() => ({ data: [] })),
+        ]);
+
+        let enrollmentData: ApiEnrollment[] = eRes?.data ?? [];
         if (typeof enrollmentData === 'string') {
-          try {
-            enrollmentData = JSON.parse(enrollmentData);
-          } catch {
-            enrollmentData = [];
-          }
+          try { enrollmentData = JSON.parse(enrollmentData); } catch { enrollmentData = []; }
         }
-        if (!Array.isArray(enrollmentData)) {
-          enrollmentData = [];
-        }
-        
-        // Map the API response to match Enrollment interface
-        const mappedEnrollments: Enrollment[] = enrollmentData.map((e: any) => ({
-          id: e.enrollmentId || e.id,
-          enrollmentId: e.enrollmentId || e.id,
-          studentId: e.studentId || e.studentID,
-          courseId: e.courseId || e.courseID,
-          enrollmentDate: e.enrollmentDate,
-          grade: e.grade,
-          studentName: e.studentName,
-          courseName: e.courseName,
-        }));
-        
+        if (!Array.isArray(enrollmentData)) enrollmentData = [];
+
+        const coursesData: ApiCourse[] = Array.isArray(cRes?.data) ? cRes.data : [];
+        const deptsData: ApiDept[] = Array.isArray(dRes?.data) ? dRes.data : [];
+
+        // Build lookup maps
+        const courseMap = new Map<number | string, ApiCourse>();
+        coursesData.forEach((c: ApiCourse) => {
+          const id = c.courseID ?? c.id;
+          courseMap.set(id ?? '', c);
+        });
+
+        const deptMap = new Map<number | string, ApiDept>();
+        deptsData.forEach((d: ApiDept) => {
+          const id = d.departmentID ?? d.id;
+          deptMap.set(id ?? '', d);
+        });
+
+        // Map enrollments and enrich with course/department info when backend doesn't provide it
+        const mappedEnrollments: Enrollment[] = enrollmentData.map((e: ApiEnrollment) => {
+          const courseId = e.courseId ?? e.courseID;
+          const course = courseMap.get(courseId ?? '');
+          const departmentId = e.departmentId ?? e.departmentID ?? course?.departmentID ?? course?.DepartmentID ?? course?.departmentId;
+          const dept = deptMap.get(departmentId ?? '');
+
+          return {
+            id: e.enrollmentId || e.enrollmentID || e.id,
+            enrollmentId: e.enrollmentId || e.enrollmentID || e.id,
+            enrollmentID: e.enrollmentId || e.enrollmentID || e.id,
+            studentId: e.studentId || e.studentID,
+            studentID: e.studentId || e.studentID,
+            courseId: courseId,
+            courseID: courseId,
+            enrollmentDate: e.enrollmentDate,
+            grade: e.grade,
+            studentName: e.studentName,
+            studentEmail: e.studentEmail,
+            courseName: e.courseName ?? course?.title ?? course?.courseName ?? course?.name,
+            credits: e.credits ?? course?.credits ?? course?.Credits,
+            departmentId: departmentId,
+            departmentID: departmentId,
+            departmentName: e.departmentName ?? dept?.name ?? dept?.Name,
+          } as Enrollment;
+        });
+
         console.log('[Mapped Enrollments]', mappedEnrollments);
         setEnrollments(mappedEnrollments);
       } catch (err) {
@@ -135,8 +225,17 @@ const Enrollments = () => {
       });
       setOpenAddDialog(false);
       await fetchEnrollments();
-    } catch (err: any) {
-      setFormError(err.response?.data?.message ?? err.message ?? 'Failed to create enrollment');
+    } catch (err: unknown) {
+      let errorMessage = 'Failed to create enrollment';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      } else if (err && typeof err === 'object' && 'response' in err) {
+        const response = (err as { response?: { data?: { message?: string } } }).response?.data?.message;
+        if (typeof response === 'string') {
+          errorMessage = response;
+        }
+      }
+      setFormError(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -144,7 +243,7 @@ const Enrollments = () => {
 
   const handleOpenEdit = (enrollment: Enrollment) => {
     setEditingEnrollment(enrollment);
-    setEditGrade(enrollment.grade ?? '');
+    setEditGrade(enrollment.grade ? String(enrollment.grade) : '');
     setFormError(null);
     setOpenEditDialog(true);
   };
@@ -161,13 +260,22 @@ const Enrollments = () => {
         studentID: editingEnrollment!.studentId ?? editingEnrollment!.studentID!,
         courseID: editingEnrollment!.courseId ?? editingEnrollment!.courseID!,
         grade: editGrade.trim() || undefined,
-        enrollmentDate: (editingEnrollment as any).enrollmentDate ?? new Date().toISOString().slice(0, 10),
+        enrollmentDate: editingEnrollment?.enrollmentDate ?? new Date().toISOString().slice(0, 10),
       });
       setOpenEditDialog(false);
       setEditingEnrollment(null);
       await fetchEnrollments();
-    } catch (err: any) {
-      setFormError(err.response?.data?.message ?? err.message ?? 'Failed to update enrollment');
+    } catch (err: unknown) {
+      let errorMessage = 'Failed to update enrollment';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      } else if (err && typeof err === 'object' && 'response' in err) {
+        const response = (err as { response?: { data?: { message?: string } } }).response?.data?.message;
+        if (typeof response === 'string') {
+          errorMessage = response;
+        }
+      }
+      setFormError(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -181,18 +289,38 @@ const Enrollments = () => {
     try {
       await enrollmentsAPI.delete(id);
       await fetchEnrollments();
-    } catch (err: any) {
-      alert(err.response?.data?.message ?? err.message ?? 'Failed to delete');
+    } catch (err: unknown) {
+      let errorMessage = 'Failed to delete';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      } else if (err && typeof err === 'object' && 'response' in err) {
+        const response = (err as { response?: { data?: { message?: string } } }).response?.data?.message;
+        if (typeof response === 'string') {
+          errorMessage = response;
+        }
+      }
+      alert(errorMessage);
     } finally {
       setDeletingId(null);
     }
   };
 
   const filteredEnrollments = (Array.isArray(enrollments) ? enrollments : []).filter(enrollment => {
-    const studentId = enrollment.studentId || enrollment.studentID || '';
-    const courseId = enrollment.courseId || enrollment.courseID || '';
-    return studentId.toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-           courseId.toString().toLowerCase().includes(searchTerm.toLowerCase());
+    const studentId = enrollment.studentId ?? enrollment.studentID ?? '';
+    const courseId = enrollment.courseId ?? enrollment.courseID ?? '';
+    const deptId = enrollment.departmentId ?? enrollment.departmentID ?? '';
+    const deptName = (enrollment.departmentName ?? '').toString();
+    const studentName = (enrollment.studentName ?? '').toString();
+    const courseName = (enrollment.courseName ?? '').toString();
+    const q = searchTerm.toLowerCase();
+    return (
+      studentId.toString().toLowerCase().includes(q) ||
+      courseId.toString().toLowerCase().includes(q) ||
+      deptId.toString().toLowerCase().includes(q) ||
+      deptName.toLowerCase().includes(q) ||
+      studentName.toLowerCase().includes(q) ||
+      courseName.toLowerCase().includes(q)
+    );
   });
 
   const getStatusColor = (status: string) => {
@@ -248,7 +376,7 @@ const Enrollments = () => {
                 required
               >
                 <option value="">Select student</option>
-                {students.map((s: any) => (
+                {students.map((s: Student) => (
                   <option key={s.id ?? s.studentID} value={s.id ?? s.studentID}>
                     {(s.firstMidName ?? s.firstName ?? '')} {(s.lastName ?? '')} ({s.email ?? ''})
                   </option>
@@ -264,7 +392,7 @@ const Enrollments = () => {
                 required
               >
                 <option value="">Select course</option>
-                {courses.map((c: any) => (
+                {courses.map((c: Course) => (
                   <option key={c.courseID ?? c.id} value={c.courseID ?? c.id}>
                     {c.title ?? c.courseName ?? c.name ?? ''} (ID: {c.courseID ?? c.id})
                   </option>
@@ -368,6 +496,7 @@ const Enrollments = () => {
                 <TableRow className="bg-muted/50">
                   <TableHead>Student</TableHead>
                   <TableHead>Course</TableHead>
+                  <TableHead>Department</TableHead>
                   <TableHead>Progress</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Enrolled</TableHead>
@@ -377,7 +506,7 @@ const Enrollments = () => {
               <TableBody>
                 {filteredEnrollments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No enrollments found
                     </TableCell>
                   </TableRow>
@@ -400,15 +529,23 @@ const Enrollments = () => {
                           <div className="font-medium text-sm">{enrollment.courseName || `Course ${enrollment.courseId || enrollment.courseID || 'N/A'}`}</div>
                           <div className="text-xs text-muted-foreground flex items-center gap-1">
                             <BookOpen className="w-3 h-3" />
-                            Instructor
+                            Credits: {enrollment.credits || 0}
                           </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <div className="font-medium">{enrollment.departmentName || 'N/A'}</div>
+                          <div className="text-xs text-muted-foreground">ID: {enrollment.departmentId || enrollment.departmentID || 'N/A'}</div>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="w-24">
                           <div className="flex items-center justify-between text-xs mb-1">
                             <span>0%</span>
-                            {enrollment.grade && <span className="font-semibold text-success">{enrollment.grade}</span>}
+                            {(enrollment.grade !== undefined && enrollment.grade !== null)
+                              ? <span className="font-semibold text-success">{String(enrollment.grade)}</span>
+                              : null}
                           </div>
                           <div className="h-2 bg-muted rounded-full overflow-hidden">
                             <div 

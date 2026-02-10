@@ -25,6 +25,21 @@ namespace ELearningModels.Controllers
             return Ok(courses);
         }
 
+        // GET: api/courses/department/5
+        [HttpGet("department/{departmentId}")]
+        public async Task<IActionResult> GetByDepartment(int departmentId)
+        {
+            try
+            {
+                var courses = await _service.GetByDepartmentAsync(departmentId);
+                return Ok(courses);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpPost]
         [Authorize(Roles = "Instructor,Admin")]
         public async Task<IActionResult> Create([FromBody] CourseCreateDto dto)
