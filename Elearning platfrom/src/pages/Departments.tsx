@@ -49,6 +49,62 @@ interface Department {
   instructors?: Record<string, unknown>[];
 }
 
+// Raw API shapes used for safer typing of responses
+interface RawDept {
+  departmentID?: number | string;
+  departmentId?: number | string;
+  id?: number | string;
+  name?: string;
+  budget?: number;
+  startDate?: string;
+  instructorID?: number | null;
+  instructorId?: number | null;
+  administrator?: Record<string, unknown> | null;
+  administratorName?: string | null;
+  courses?: unknown[];
+  instructors?: unknown[];
+}
+
+interface RawCourse {
+  courseID?: number | string;
+  courseId?: number | string;
+  id?: number | string;
+  departmentID?: number | string;
+  departmentId?: number | string;
+}
+
+interface RawEnrollment {
+  enrollmentID?: number | string;
+  enrollmentId?: number | string;
+  id?: number | string;
+  courseID?: number | string;
+  courseId?: number | string;
+  studentID?: number | string;
+  studentId?: number | string;
+}
+
+interface RawInstructor {
+  instructorID?: number | string;
+  instructorId?: number | string;
+  id?: number | string;
+  departmentID?: number | string;
+  departmentId?: number | string;
+  firstMidName?: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+// Helper to safely extract array from ApiResult<T>
+function getResultArray<T>(res: ApiResult<T> | unknown): T[] {
+  if (Array.isArray(res)) return res as T[];
+  if (res && typeof res === 'object' && 'data' in res) {
+    const r = res as { data?: unknown };
+    const d = r.data;
+    if (Array.isArray(d)) return d as T[];
+  }
+  return [];
+}
+
 const Departments = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -63,6 +119,8 @@ const Departments = () => {
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [newName, setNewName] = useState('');
   const [newBudget, setNewBudget] = useState('0');
   const [newStartDate, setNewStartDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -76,19 +134,19 @@ const Departments = () => {
       setLoading(true);
       setError(null);
       
-      // Fetch all required data in parallel
+      // Fetch all required data in parallel (responses can be arrays or { data: [...] })
       const [deptResponse, coursesData, enrollmentsData, instructorsData] = (await Promise.all([
         departmentsAPI.getAll(),
         coursesAPI.getAll(),
         enrollmentsAPI.getAll(),
         instructorsAPI.getAll(),
-      ])) as [ApiResult<Record<string, unknown>>, ApiResult<Record<string, unknown>>, ApiResult<Record<string, unknown>>, ApiResult<Record<string, unknown>>];
+      ])) as [ApiResult<RawDept>, ApiResult<RawCourse>, ApiResult<RawEnrollment>, ApiResult<RawInstructor>];
 
       // Get department array
-      let deptArray = Array.isArray(deptResponse) ? deptResponse : (deptResponse?.data || []);
+      let deptArray = getResultArray<RawDept>(deptResponse);
       if (typeof deptArray === 'string') {
         try {
-          deptArray = JSON.parse(deptArray);
+          deptArray = JSON.parse(deptArray as unknown as string);
         } catch {
           deptArray = [];
         }
@@ -101,7 +159,7 @@ const Departments = () => {
       const instructorsPerDept: Record<string, Set<string>> = {}; // deptId -> Set of instructorIds
 
       // Process courses - map courses to departments
-      const coursesList = Array.isArray(coursesData) ? coursesData : (coursesData?.data || []);
+      const coursesList: RawCourse[] = getResultArray<RawCourse>(coursesData);
       coursesList.forEach((course: Record<string, unknown>) => {
         const deptId = (course.departmentID ?? course.departmentId)?.toString() || '';
         if (deptId) {
@@ -110,7 +168,7 @@ const Departments = () => {
       });
 
       // Process enrollments - count students per department
-      const enrollmentsList = Array.isArray(enrollmentsData) ? enrollmentsData : (enrollmentsData?.data || []);
+      const enrollmentsList: RawEnrollment[] = getResultArray<RawEnrollment>(enrollmentsData);
       enrollmentsList.forEach((enrollment: Record<string, unknown>) => {
         const courseId = (enrollment.courseID ?? enrollment.courseId)?.toString() || '';
         const studentId = (enrollment.studentID ?? enrollment.studentId)?.toString() || '';
@@ -130,7 +188,7 @@ const Departments = () => {
       });
 
       // Process instructors - count per department
-      const instructorsList = Array.isArray(instructorsData) ? instructorsData : (instructorsData?.data || []);
+      const instructorsList: RawInstructor[] = getResultArray<RawInstructor>(instructorsData);
       instructorsList.forEach((instructor: Record<string, unknown>) => {
         const deptId = (instructor.departmentID ?? instructor.departmentId)?.toString() || '';
         if (deptId) {
@@ -140,24 +198,27 @@ const Departments = () => {
       });
 
       // Map departments with aggregated counts
-      const mappedDepts: Department[] = deptArray.map((dept: Record<string, unknown>) => {
-        const deptId = (dept.departmentID ?? dept.departmentId ?? dept.id)?.toString();
+      const mappedDepts: Department[] = (deptArray as RawDept[]).map((dept: RawDept) => {
+        const rawId = dept.departmentID ?? dept.departmentId ?? dept.id;
+        const deptIdStr = rawId != null ? String(rawId) : '';
+        const idNum = deptIdStr !== '' && !Number.isNaN(Number(deptIdStr)) ? Number(deptIdStr) : undefined;
         const admin = dept.administrator as Record<string, unknown> | undefined;
+        const deptKey = idNum != null ? String(idNum) : (deptIdStr || '');
         return {
-          departmentId: dept.departmentID ?? dept.departmentId ?? dept.id,
-          id: dept.departmentID ?? dept.departmentId ?? dept.id,
+          departmentId: idNum,
+          id: idNum,
           name: dept.name || '',
           budget: dept.budget,
           startDate: dept.startDate,
           instructorId: dept.instructorID ?? dept.instructorId,
           administratorName: dept.administratorName ?? (admin ? `${admin.firstMidName ?? ''} ${admin.lastName ?? ''}`.trim() : null),
-          courseCount: coursesMap[deptId] ?? 0,
-          studentCount: studentsPerDept[deptId]?.size ?? 0,
-          instructorCount: instructorsPerDept[deptId]?.size ?? 0,
+          courseCount: coursesMap[deptKey] ?? 0,
+          studentCount: studentsPerDept[deptKey]?.size ?? 0,
+          instructorCount: instructorsPerDept[deptKey]?.size ?? 0,
           administrator: dept.administrator,
           courses: dept.courses,
           instructors: dept.instructors,
-        };
+        } as Department;
       });
       
       setDepartments(mappedDepts);
@@ -176,8 +237,8 @@ const Departments = () => {
   useEffect(() => {
     if (openEditDialog) {
       instructorsAPI.getAll()
-        .then((res: ApiResult<Record<string, unknown>>) => {
-          const data = Array.isArray(res) ? res : (res?.data || []);
+        .then((res: ApiResult<RawInstructor>) => {
+          const data = getResultArray<RawInstructor>(res);
           setInstructors(data as Array<{ instructorID?: number; id?: number; firstMidName?: string; firstName?: string; lastName?: string }>);
         })
         .catch(() => setInstructors([]));
@@ -211,7 +272,8 @@ const Departments = () => {
       setOpenAddDialog(false);
       await fetchDepartments();
     } catch (err: unknown) {
-      const msg = (err as Record<string, unknown>)?.response?.data?.message ?? (err as Record<string, unknown>)?.response?.data?.inner ?? (err as Record<string, unknown>)?.message ?? 'Failed to create department';
+      const errObj = err as Record<string, unknown>;
+      const msg = ((errObj?.response as Record<string, unknown>)?.data?.message as string) ?? ((errObj?.response as Record<string, unknown>)?.data?.inner as string) ?? (typeof errObj?.message === 'string' ? errObj.message : 'Failed to create department');
       setCreateError(msg);
     } finally {
       setCreating(false);
@@ -252,7 +314,7 @@ const Departments = () => {
       await fetchDepartments();
     } catch (err: unknown) {
       const errObj = err as Record<string, unknown>;
-      setEditError(errObj?.response?.data?.message ?? errObj?.response?.data?.inner ?? errObj?.message ?? 'Failed to update department');
+      setEditError(((errObj?.response as Record<string, unknown>)?.data?.message as string) ?? ((errObj?.response as Record<string, unknown>)?.data?.inner as string) ?? (typeof errObj?.message === 'string' ? errObj.message : 'Failed to update department'));
     } finally {
       setUpdating(false);
     }
@@ -266,11 +328,39 @@ const Departments = () => {
     try {
       await departmentsAPI.delete(id);
       await fetchDepartments();
+      setSelectedIds(prev => prev.filter(x => x !== id));
     } catch (err: unknown) {
-      const msg = (err as Record<string, unknown>)?.response?.data?.message ?? (err as Record<string, unknown>)?.message ?? 'Failed to delete department';
+      const msg = ((err as Record<string, unknown>)?.response?.data?.message as string) ?? (typeof (err as Record<string, unknown>)?.message === 'string' ? (err as Record<string, unknown>)?.message : 'Failed to delete department');
       alert(msg);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    const allIds = filteredDepartments.map(d => d.departmentId ?? d.id).filter(Boolean) as number[];
+    const allSelected = allIds.length > 0 && allIds.every(id => selectedIds.includes(id));
+    if (allSelected) setSelectedIds([]);
+    else setSelectedIds(allIds);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Delete ${selectedIds.length} selected department(s)? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => departmentsAPI.delete(id)));
+      await fetchDepartments();
+      setSelectedIds([]);
+    } catch (err: unknown) {
+      const msg = ((err as Record<string, unknown>)?.response?.data?.message as string) ?? (typeof (err as Record<string, unknown>)?.message === 'string' ? (err as Record<string, unknown>)?.message : 'Failed to delete selected');
+      alert(msg);
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -309,10 +399,15 @@ const Departments = () => {
           <h2 className="text-2xl font-bold text-foreground">Departments</h2>
           <p className="text-muted-foreground">Manage academic departments</p>
         </div>
-        <Button className="bg-accent hover:bg-accent/90 text-accent-foreground" onClick={handleOpenAdd}>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Department
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button className="bg-destructive/10 text-destructive hover:bg-destructive/20" onClick={handleBulkDelete} disabled={selectedIds.length === 0 || bulkDeleting}>
+            {bulkDeleting ? 'Deleting...' : `Delete Selected (${selectedIds.length})`}
+          </Button>
+          <Button className="bg-accent hover:bg-accent/90 text-accent-foreground" onClick={handleOpenAdd}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Department
+          </Button>
+        </div>
       </div>
 
       <Dialog open={openAddDialog} onOpenChange={setOpenAddDialog}>
@@ -470,27 +565,38 @@ const Departments = () => {
         <CardContent className="pt-0">
           <div className="rounded-lg border border-border overflow-hidden">
             <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead>Department</TableHead>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Head</TableHead>
-                  <TableHead className="text-center">Courses</TableHead>
-                  <TableHead className="text-center">Instructors</TableHead>
-                  <TableHead className="text-center">Students</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="w-12 text-center">
+                      <input type="checkbox" aria-label="Select all" onChange={toggleSelectAll} checked={filteredDepartments.length > 0 && filteredDepartments.every(d => selectedIds.includes(d.departmentId ?? d.id ?? -1))} />
+                    </TableHead>
+                    <TableHead>Department</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Head</TableHead>
+                    <TableHead className="text-center">Courses</TableHead>
+                    <TableHead className="text-center">Instructors</TableHead>
+                    <TableHead className="text-center">Students</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
               <TableBody>
                 {filteredDepartments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No departments found
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredDepartments.map((dept) => (
                     <TableRow key={dept.departmentId ?? dept.id ?? dept.name ?? ''} className="hover:bg-muted/50">
+                      <TableCell className="text-center">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select department ${dept.name}`}
+                          checked={selectedIds.includes((dept.departmentId ?? dept.id) as number)}
+                          onChange={() => { const id = dept.departmentId ?? dept.id; if (id) toggleSelect(id); }}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">{dept.name || 'N/A'}</TableCell>
                       <TableCell>{dept.departmentId ?? dept.id ?? '—'}</TableCell>
                       <TableCell>{dept.administratorName || '—'}</TableCell>

@@ -24,5 +24,12 @@ namespace ELearningModels.DTO
         /// <summary>Required for register/create; optional for update (change password).</summary>
         [MinLength(6)]
         public string? Password { get; set; }
+
+        /// <summary>Optional. Department ID for student enrollment.</summary>
+        public int? DepartmentID { get; set; }
+
+        /// <summary>Read-only. Department name returned from server.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public string? DepartmentName { get; set; }
     }
 }

@@ -18,6 +18,8 @@ namespace ELearningModels.DTO
         [Range(0, 100)]
         public decimal? Grade { get; set; }
 
+        public DateTime EnrollmentDate { get; set; }
+
         // Course related fields
         public string? CourseName { get; set; }
         public int Credits { get; set; }

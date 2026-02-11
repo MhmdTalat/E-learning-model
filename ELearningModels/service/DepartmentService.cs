@@ -23,6 +23,9 @@ namespace ELearningModels.service
         public async Task<IEnumerable<DepartmentListDto>> GetAllWithRelationsAsync()
         {
             return await _context.Departments
+                .Include(d => d.Administrator)
+                .Include(d => d.Courses)
+                    .ThenInclude(c => c.Enrollments)
                 .AsNoTracking()
                 .Select(d => new DepartmentListDto
                 {

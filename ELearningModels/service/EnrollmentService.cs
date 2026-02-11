@@ -46,11 +46,12 @@ namespace ELearningModels.service
                     CourseID = enrollment.CourseID,
                     StudentID = enrollment.StudentID,
                     Grade = enrollment.Grade,
+                    EnrollmentDate = enrollment.EnrollmentDate,
                     CourseName = enrollment.Course.Title,
                     Credits = enrollment.Course.Credits,
                     DepartmentID = enrollment.Course.DepartmentID,
                     DepartmentName = enrollment.Course.Department.Name,
-                    StudentName = enrollment.Student.FirstName + " " + enrollment.Student.LastName,
+                    StudentName = enrollment.Student.FirstMidName + " " + enrollment.Student.LastName,
                     StudentEmail = enrollment.Student.Email
                 })
                 .ToListAsync();
@@ -81,11 +82,12 @@ namespace ELearningModels.service
                 CourseID = enrollment.CourseID,
                 StudentID = enrollment.StudentID,
                 Grade = enrollment.Grade,
+                EnrollmentDate = enrollment.EnrollmentDate,
                 CourseName = enrollment.Course.Title,
                 Credits = enrollment.Course.Credits,
                 DepartmentID = enrollment.Course.DepartmentID,
                 DepartmentName = enrollment.Course.Department.Name,
-                StudentName = enrollment.Student.FirstName + " " + enrollment.Student.LastName,
+                StudentName = enrollment.Student.FirstMidName + " " + enrollment.Student.LastName,
                 StudentEmail = enrollment.Student.Email
             };
         }
@@ -111,11 +113,12 @@ namespace ELearningModels.service
                     CourseID = enrollment.CourseID,
                     StudentID = enrollment.StudentID,
                     Grade = enrollment.Grade,
+                    EnrollmentDate = enrollment.EnrollmentDate,
                     CourseName = enrollment.Course.Title,
                     Credits = enrollment.Course.Credits,
                     DepartmentID = enrollment.Course.DepartmentID,
                     DepartmentName = enrollment.Course.Department.Name,
-                    StudentName = enrollment.Student.FirstName + " " + enrollment.Student.LastName,
+                    StudentName = enrollment.Student.FirstMidName + " " + enrollment.Student.LastName,
                     StudentEmail = enrollment.Student.Email
                 })
                 .ToListAsync();
@@ -142,11 +145,12 @@ namespace ELearningModels.service
                     CourseID = enrollment.CourseID,
                     StudentID = enrollment.StudentID,
                     Grade = enrollment.Grade,
+                    EnrollmentDate = enrollment.EnrollmentDate,
                     CourseName = enrollment.Course.Title,
                     Credits = enrollment.Course.Credits,
                     DepartmentID = enrollment.Course.DepartmentID,
                     DepartmentName = enrollment.Course.Department.Name,
-                    StudentName = enrollment.Student.FirstName + " " + enrollment.Student.LastName,
+                    StudentName = enrollment.Student.FirstMidName + " " + enrollment.Student.LastName,
                     StudentEmail = enrollment.Student.Email
                 })
                 .ToListAsync();

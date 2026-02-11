@@ -73,6 +73,9 @@ const Analysis = () => {
   const [adminPassword, setAdminPassword] = useState('');
   const [creatingAdmin, setCreatingAdmin] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
+  const [selectedAdminIds, setSelectedAdminIds] = useState<number[]>([]);
+  const [bulkDeletingAdmins, setBulkDeletingAdmins] = useState(false);
+  const [deletingAdminId, setDeletingAdminId] = useState<number | null>(null);
 
   // Helper function to generate monthly trends from real data
   const generateMonthlyTrends = (students: Record<string, unknown>[], enrollments: Record<string, unknown>[], courses: Record<string, unknown>[] = [], instructors: Record<string, unknown>[] = []) => {
@@ -704,7 +707,44 @@ const Analysis = () => {
           </CardContent>
         </Card>
         <div className="flex items-start justify-end lg:col-span-2">
-          <Button onClick={() => { setOpenAdminDialog(true); setAdminError(null); }} className="ml-auto">Add Admin</Button>
+          <div className="flex items-center gap-2 ml-auto">
+            <Button className="bg-destructive/10 text-destructive hover:bg-destructive/20" onClick={async () => {
+              if (selectedAdminIds.length === 0) return;
+              if (!confirm(`Delete ${selectedAdminIds.length} selected admin(s)?`)) return;
+              setBulkDeletingAdmins(true);
+              try {
+                await Promise.all(selectedAdminIds.map(id => adminsAPI.delete(id)));
+                const res = await adminsAPI.getByRoleId(3);
+                const adminsData = Array.isArray(res?.data) ? res.data : [];
+                setAdmins(adminsData as Admin[]);
+                setAdminCount((adminsData as Admin[]).length || 0);
+                setSelectedAdminIds([]);
+              } catch (err: unknown) {
+                  let msg = 'Failed to delete selected admins';
+                  if (err && typeof err === 'object') {
+                    const errObj = err as Record<string, unknown>;
+                    if (errObj.response && typeof errObj.response === 'object') {
+                      const respObj = errObj.response as Record<string, unknown>;
+                      if (respObj.data && typeof respObj.data === 'object') {
+                        const dataObj = respObj.data as Record<string, unknown>;
+                        if (dataObj.message && typeof dataObj.message === 'string') {
+                          msg = dataObj.message;
+                        }
+                      }
+                    }
+                  }
+                  if (typeof msg !== 'string' && err instanceof Error && err.message) {
+                    msg = err.message;
+                  }
+                  alert(msg);
+                } finally {
+                setBulkDeletingAdmins(false);
+              }
+            }} disabled={selectedAdminIds.length === 0 || bulkDeletingAdmins}>
+              {bulkDeletingAdmins ? 'Deleting...' : `Delete Selected (${selectedAdminIds.length})`}
+            </Button>
+            <Button onClick={() => { setOpenAdminDialog(true); setAdminError(null); }} className="ml-2">Add Admin</Button>
+          </div>
         </div>
 
         {/* Courses by Enrollment */}
@@ -779,21 +819,84 @@ const Analysis = () => {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border">
+                      <th className="w-12 text-center py-2 px-4 font-semibold text-foreground"><input
+                        type="checkbox"
+                        aria-label="Select all admins"
+                        onChange={() => {
+                          const allIds = admins.map(a => a.id ?? a.adminID).filter(Boolean) as number[];
+                          const allSelected = allIds.length > 0 && allIds.every(id => selectedAdminIds.includes(id));
+                          if (allSelected) setSelectedAdminIds([]);
+                          else setSelectedAdminIds(allIds);
+                        }}
+                        checked={admins.length > 0 && admins.map(a => a.id ?? a.adminID).filter(Boolean).every(id => selectedAdminIds.includes(id as number))}
+                      /></th>
                       <th className="text-left py-2 px-4 font-semibold text-foreground">Name</th>
                       <th className="text-left py-2 px-4 font-semibold text-foreground">Email</th>
                       <th className="text-left py-2 px-4 font-semibold text-foreground">Role</th>
                       <th className="text-left py-2 px-4 font-semibold text-foreground">ID</th>
+                      <th className="text-right py-2 px-4 font-semibold text-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {admins.map((admin) => (
-                      <tr key={admin.id || admin.adminID} className="border-b border-border/50 hover:bg-muted/30">
-                        <td className="py-3 px-4 text-foreground">{admin.firstName || admin.lastName || 'Admin'}</td>
-                        <td className="py-3 px-4 text-muted-foreground">{admin.email || '—'}</td>
-                        <td className="py-3 px-4 text-muted-foreground">{admin.role || 'Admin'}</td>
-                        <td className="py-3 px-4 text-muted-foreground">{admin.id || admin.adminID || '—'}</td>
-                      </tr>
-                    ))}
+                    {admins.map((admin) => {
+                      const id = admin.id ?? admin.adminID;
+                      return (
+                        <tr key={id} className="border-b border-border/50 hover:bg-muted/30">
+                          <td className="text-center py-3 px-4">
+                            <input
+                              type="checkbox"
+                              aria-label={`Select admin ${admin.firstName ?? admin.lastName ?? id}`}
+                              checked={id != null && selectedAdminIds.includes(id as number)}
+                              onChange={() => {
+                                if (id == null) return;
+                                setSelectedAdminIds(prev => prev.includes(id as number) ? prev.filter(x => x !== id) : [...prev, id as number]);
+                              }}
+                            />
+                          </td>
+                          <td className="py-3 px-4 text-foreground">{admin.firstName || admin.lastName || 'Admin'}</td>
+                          <td className="py-3 px-4 text-muted-foreground">{admin.email || '—'}</td>
+                          <td className="py-3 px-4 text-muted-foreground">{admin.role || 'Admin'}</td>
+                          <td className="py-3 px-4 text-muted-foreground">{id ?? '—'}</td>
+                          <td className="py-3 px-4 text-right">
+                            <Button className="bg-destructive/10 text-destructive hover:bg-destructive/20" onClick={async () => {
+                              if (id == null) return;
+                              if (!confirm(`Delete admin ${admin.firstName ?? admin.lastName ?? id}?`)) return;
+                              setDeletingAdminId(id as number);
+                              try {
+                                await adminsAPI.delete(id as number);
+                                const res = await adminsAPI.getByRoleId(3);
+                                const adminsData = Array.isArray(res?.data) ? res.data : [];
+                                setAdmins(adminsData as Admin[]);
+                                setAdminCount((adminsData as Admin[]).length || 0);
+                                setSelectedAdminIds(prev => prev.filter(x => x !== id));
+                              } catch (err: unknown) {
+                                let msg = 'Failed to delete admin';
+                                if (err && typeof err === 'object') {
+                                  const errObj = err as Record<string, unknown>;
+                                  if (errObj.response && typeof errObj.response === 'object') {
+                                    const respObj = errObj.response as Record<string, unknown>;
+                                    if (respObj.data && typeof respObj.data === 'object') {
+                                      const dataObj = respObj.data as Record<string, unknown>;
+                                      if (dataObj.message && typeof dataObj.message === 'string') {
+                                        msg = dataObj.message;
+                                      }
+                                    }
+                                  }
+                                }
+                                if (typeof msg !== 'string' && err instanceof Error && err.message) {
+                                  msg = err.message;
+                                }
+                                alert(msg);
+                              } finally {
+                                setDeletingAdminId(null);
+                              }
+                            }} disabled={deletingAdminId === id}>
+                              {deletingAdminId === id ? 'Deleting...' : 'Delete'}
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

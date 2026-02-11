@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ClipboardList, Plus, Search, Edit, Trash2, MoreHorizontal, User, BookOpen, Calendar, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { useState, useEffect, ChangeEvent } from 'react';
+import { ClipboardList, Plus, Search, Edit, Trash2, MoreHorizontal, User, BookOpen, Calendar, CheckCircle, Clock, XCircle, Upload, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -27,6 +28,49 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { enrollmentsAPI, studentsAPI, coursesAPI, departmentsAPI } from '@/lib/api';
+
+// Parse Excel file (CSV format)
+const parseExcelFile = async (file: File): Promise<Array<{ studentid: string; courseid: string; enrollmentdate?: string; grade?: string }>> => {
+  const text = await file.text();
+  const lines = text.split('\n');
+  const records: Array<{ studentid: string; courseid: string; enrollmentdate?: string; grade?: string }> = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
+    const [studentid, courseid, enrollmentdate, grade] = line.split(',').map(v => v.trim());
+    if (studentid && courseid) {
+      records.push({
+        studentid,
+        courseid,
+        enrollmentdate: enrollmentdate || undefined,
+        grade: grade || undefined,
+      });
+    }
+  }
+
+  return records;
+};
+
+// Download CSV template for bulk import
+const downloadTemplate = () => {
+  const headers = 'studentId,courseId,enrollmentDate,grade\n';
+  const exampleRow = '1,101,2024-01-15,85\n';
+  const csvContent = headers + exampleRow;
+  
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'enrollment_template.csv');
+  link.style.visibility = 'hidden';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
 
 interface Enrollment {
   id?: number;
@@ -62,6 +106,19 @@ interface Course {
   title?: string;
   courseName?: string;
   name?: string;
+}
+
+interface BulkPreviewRecord {
+  row: number;
+  studentId: number;
+  courseId: number;
+  studentName: string;
+  courseName: string;
+  enrollmentDate: string;
+  grade: string;
+  valid: boolean;
+  error: string | null;
+  warning?: string | null;
 }
 
 // API raw types to avoid `any` and satisfy eslint
@@ -121,6 +178,15 @@ const Enrollments = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [openBulkDialog, setOpenBulkDialog] = useState(false);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState('');
+  const [bulkPreviewData, setBulkPreviewData] = useState<BulkPreviewRecord[]>([]);
+  const [bulkPreviewError, setBulkPreviewError] = useState<string | null>(null);
+  const [bulkImportingError, setBulkImportingError] = useState<string | null>(null);
+  const [studentMap, setStudentMap] = useState<Map<number, Student>>(new Map());
+  const [courseMap, setCourseMap] = useState<Map<number, Course>>(new Map());
 
   const fetchEnrollments = async () => {
       try {
@@ -305,6 +371,148 @@ const Enrollments = () => {
     }
   };
 
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    setBulkFile(file);
+    setBulkPreviewData([]);
+    setBulkPreviewError(null);
+    
+    if (!file) return;
+
+    try {
+      const data = await parseExcelFile(file);
+      
+      if (data.length === 0) {
+        setBulkPreviewError('No valid enrollment records found in file');
+        return;
+      }
+
+      // Build maps from students and courses
+      const sMap = new Map<number, Student>();
+      const cMap = new Map<number, Course>();
+
+      if (students.length > 0) {
+        students.forEach(s => {
+          const id = s.studentID || s.id;
+          if (id) sMap.set(id, s);
+        });
+      }
+
+      if (courses.length > 0) {
+        courses.forEach(c => {
+          const id = c.courseID || c.id;
+          if (id) cMap.set(id, c);
+        });
+      }
+
+      setStudentMap(sMap);
+      setCourseMap(cMap);
+
+      // Transform preview data to show full details
+      const previewData = data.map((record, idx) => {
+        const studentId = parseInt(record.studentid);
+        const courseId = parseInt(record.courseid);
+        const student = sMap.get(studentId);
+        const course = cMap.get(courseId);
+
+        return {
+          row: idx + 2,
+          studentId,
+          courseId,
+          studentName: student ? `${student.firstMidName || student.firstName || ''} ${student.lastName || ''}`.trim() : `Student ${studentId}`,
+          courseName: course ? course.courseName || course.title || course.name || `Course ${courseId}` : `Course ${courseId}`,
+          enrollmentDate: record.enrollmentdate || new Date().toISOString().slice(0, 10),
+          grade: record.grade || '-',
+          valid: course ? true : false,
+          error: !course ? `Course ${courseId} not found` : null,
+          warning: !student ? `Student ${studentId} not found` : null,
+        };
+      });
+
+      setBulkPreviewData(previewData);
+    } catch (err) {
+      setBulkPreviewError(err instanceof Error ? err.message : 'Failed to parse file');
+    }
+  };
+
+  const handleBulkUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bulkFile) {
+      setFormError('Please select a file');
+      return;
+    }
+
+    if (bulkPreviewData.length === 0) {
+      setFormError('No valid records to import');
+      return;
+    }
+
+    setBulkImporting(true);
+    setFormError(null);
+
+    try {
+      let successCount = 0;
+      let failedCount = 0;
+      const errors: string[] = [];
+
+      for (const preview of bulkPreviewData) {
+        try {
+          setBulkProgress(`Importing enrollment: ${preview.studentName} → ${preview.courseName}`);
+
+          if (!preview.valid) {
+            errors.push(`Row ${preview.row}: ${preview.error}`);
+            failedCount++;
+            continue;
+          }
+
+          await enrollmentsAPI.create({
+            studentId: preview.studentId,
+            courseId: preview.courseId,
+            enrollmentDate: preview.enrollmentDate,
+            grade: preview.grade !== '-' ? preview.grade : undefined,
+          });
+
+          successCount++;
+        } catch (err: unknown) {
+          failedCount++;
+          let errMsg = 'Unknown error';
+          if (err instanceof Error) {
+            errMsg = err.message;
+          } else if (err && typeof err === 'object' && 'response' in err) {
+            const response = (err as { response?: { data?: { message?: string } } }).response?.data?.message;
+            if (typeof response === 'string') {
+              errMsg = response;
+            }
+          }
+          errors.push(`Row ${preview.row}: ${errMsg}`);
+        }
+      }
+
+      setBulkProgress(`Complete! ${successCount} imported, ${failedCount} failed`);
+      
+      if (errors.length > 0) {
+        setFormError(`Import completed with errors:\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n... and ${errors.length - 5} more errors` : ''}`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      setOpenBulkDialog(false);
+      setBulkFile(null);
+      setBulkPreviewData([]);
+      setBulkProgress('');
+      await fetchEnrollments();
+    } catch (err: unknown) {
+      let errorMessage = 'Failed to import enrollments';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      } else if (err && typeof err === 'object' && 'message' in err && typeof (err as { message?: string }).message === 'string') {
+        errorMessage = (err as { message: string }).message;
+      }
+      setFormError(errorMessage);
+    } finally {
+      setBulkImporting(false);
+    }
+  };
+
   const filteredEnrollments = (Array.isArray(enrollments) ? enrollments : []).filter(enrollment => {
     const studentId = enrollment.studentId ?? enrollment.studentID ?? '';
     const courseId = enrollment.courseId ?? enrollment.courseID ?? '';
@@ -356,10 +564,20 @@ const Enrollments = () => {
           <h2 className="text-2xl font-bold text-foreground">Enrollments</h2>
           <p className="text-muted-foreground">Manage course registrations</p>
         </div>
-        <Button className="bg-accent hover:bg-accent/90 text-accent-foreground" onClick={handleOpenAdd}>
-          <Plus className="w-4 h-4 mr-2" />
-          New Enrollment
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={downloadTemplate}>
+            <Download className="w-4 h-4 mr-2" />
+            Download Template
+          </Button>
+          <Button variant="outline" onClick={() => setOpenBulkDialog(true)}>
+            <Upload className="w-4 h-4 mr-2" />
+            Import Excel
+          </Button>
+          <Button className="bg-accent hover:bg-accent/90 text-accent-foreground" onClick={handleOpenAdd}>
+            <Plus className="w-4 h-4 mr-2" />
+            New Enrollment
+          </Button>
+        </div>
       </div>
 
       <Dialog open={openAddDialog} onOpenChange={setOpenAddDialog}>
@@ -425,6 +643,95 @@ const Enrollments = () => {
               <Button type="submit" disabled={submitting}>{submitting ? 'Saving...' : 'Save'}</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openBulkDialog} onOpenChange={setOpenBulkDialog}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>Import Enrollments</DialogTitle>
+            <DialogDescription>Upload a CSV file with studentId, courseId, enrollmentDate, and grade columns</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {bulkImportingError && (
+              <div className="bg-destructive/10 text-destructive p-3 rounded-lg text-sm">
+                {bulkImportingError}
+              </div>
+            )}
+            <div className="border-2 border-dashed rounded-lg p-6 text-center">
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="hidden"
+                id="bulk-file-input"
+              />
+              <label htmlFor="bulk-file-input" className="cursor-pointer block">
+                <p className="font-semibold">Drop CSV file or click to select</p>
+                <p className="text-sm text-muted-foreground mt-1">Format: studentId, courseId, enrollmentDate, grade</p>
+                {bulkFile && <p className="text-sm text-accent mt-2">✓ {bulkFile.name}</p>}
+              </label>
+            </div>
+
+            {bulkPreviewData.length > 0 && (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Student Name</TableHead>
+                      <TableHead>Course Name</TableHead>
+                      <TableHead>Enrollment Date</TableHead>
+                      <TableHead>Grade</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {bulkPreviewData.map((row, idx) => (
+                      <TableRow key={idx} className={row.valid && !row.warning ? 'bg-success/5' : row.warning && row.valid ? 'bg-warning/5' : 'bg-destructive/5'}>
+                        <TableCell>
+                          <div className="text-sm font-medium">{row.studentName}</div>
+                          <div className="text-xs text-muted-foreground">ID: {row.studentId}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm font-medium">{row.courseName}</div>
+                          <div className="text-xs text-muted-foreground">ID: {row.courseId}</div>
+                        </TableCell>
+                        <TableCell className="text-sm">{row.enrollmentDate}</TableCell>
+                        <TableCell className="text-sm">{row.grade || '-'}</TableCell>
+                        <TableCell>
+                          {row.error ? (
+                            <div className="flex items-center gap-2">
+                              <XCircle className="w-5 h-5 text-destructive" />
+                              <span className="text-xs text-destructive">{row.error}</span>
+                            </div>
+                          ) : row.warning ? (
+                            <div className="flex items-center gap-2">
+                              <Clock className="w-5 h-5 text-yellow-600" />
+                              <span className="text-xs text-yellow-600">{row.warning}</span>
+                            </div>
+                          ) : (
+                            <CheckCircle className="w-5 h-5 text-success" />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenBulkDialog(false)} disabled={bulkImporting}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleBulkUpload} 
+              disabled={bulkPreviewData.length === 0 || bulkImporting || bulkPreviewData.some(r => r.error)}
+            >
+              {bulkImporting ? `Importing... (${bulkProgress}/${bulkPreviewData.length})` : `Import ${bulkPreviewData.length} Enrollments`}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -497,9 +804,9 @@ const Enrollments = () => {
                   <TableHead>Student</TableHead>
                   <TableHead>Course</TableHead>
                   <TableHead>Department</TableHead>
-                  <TableHead>Progress</TableHead>
+                  <TableHead>Enrolled date</TableHead>
+                  <TableHead>Active</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Enrolled</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -511,87 +818,80 @@ const Enrollments = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredEnrollments.map((enrollment) => (
-                    <TableRow key={enrollment.id} className="hover:bg-muted/50">
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center">
-                            <User className="w-4 h-4 text-primary" />
+                  filteredEnrollments.map((enrollment) => {
+                    // Concatenate student name (firstname + lastname)
+                    const studentFullName = enrollment.studentName || 'Unknown Student';
+                    // Concatenate course name + id
+                    const courseDisplay = `${enrollment.courseName || 'Unknown Course'} (ID: ${enrollment.courseID || enrollment.courseId || 'N/A'})`;
+                    
+                    return (
+                      <TableRow key={enrollment.id} className="hover:bg-muted/50">
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center">
+                              <User className="w-4 h-4 text-primary" />
+                            </div>
+                            <div>
+                              <div className="font-medium text-sm">{studentFullName}</div>
+                              <div className="text-xs text-muted-foreground">Student ID: {enrollment.studentId || enrollment.studentID || 'N/A'}</div>
+                            </div>
                           </div>
+                        </TableCell>
+                        <TableCell>
                           <div>
-                            <div className="font-medium text-sm">{enrollment.studentName || `Student ${enrollment.studentId || enrollment.studentID || 'N/A'}`}</div>
-                            <div className="text-xs text-muted-foreground">ID: {enrollment.studentId || enrollment.studentID || 'N/A'}</div>
+                            <div className="font-medium text-sm">{courseDisplay}</div>
+                            <div className="text-xs text-muted-foreground flex items-center gap-1">
+                              <BookOpen className="w-3 h-3" />
+                              Credits: {enrollment.credits || 0}
+                            </div>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium text-sm">{enrollment.courseName || `Course ${enrollment.courseId || enrollment.courseID || 'N/A'}`}</div>
-                          <div className="text-xs text-muted-foreground flex items-center gap-1">
-                            <BookOpen className="w-3 h-3" />
-                            Credits: {enrollment.credits || 0}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div className="font-medium">{enrollment.departmentName || 'N/A'}</div>
+                            <div className="text-xs text-muted-foreground">Dept ID: {enrollment.departmentId || enrollment.departmentID || 'N/A'}</div>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          <div className="font-medium">{enrollment.departmentName || 'N/A'}</div>
-                          <div className="text-xs text-muted-foreground">ID: {enrollment.departmentId || enrollment.departmentID || 'N/A'}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="w-24">
-                          <div className="flex items-center justify-between text-xs mb-1">
-                            <span>0%</span>
-                            {(enrollment.grade !== undefined && enrollment.grade !== null)
-                              ? <span className="font-semibold text-success">{String(enrollment.grade)}</span>
-                              : null}
+                        </TableCell>
+                        <TableCell className="pr-8">
+                          <div className="text-sm">
+                            <span className="text-muted-foreground">
+                              {enrollment.enrollmentDate ? new Date(enrollment.enrollmentDate).toLocaleDateString() : 'N/A'}
+                            </span>
                           </div>
-                          <div className="h-2 bg-muted rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-accent rounded-full transition-all"
-                              style={{ width: '0%' }}
-                            />
+                        </TableCell>
+                        <TableCell>
+                          <div className="w-24">
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span>{enrollment.grade || 'N/A'}%</span>
+                              {(enrollment.grade !== undefined && enrollment.grade !== null)
+                                ? <span className="font-medium text-success">●</span>
+                                : <span className="font-medium text-amber-500">●</span>
+                              }
+                            </div>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={`${getStatusColor('Active')} flex items-center gap-1 w-fit`}>
-                          <Clock className="w-3 h-3" />
-                          Active
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                          <Calendar className="w-3 h-3" />
-                          {enrollment.enrollmentDate ? new Date(enrollment.enrollmentDate).toLocaleDateString() : 'N/A'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <MoreHorizontal className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleOpenEdit(enrollment)}>
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => handleDelete(enrollment)}
-                              disabled={deletingId === (enrollment.id ?? enrollment.enrollmentId)}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Remove
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleOpenEdit(enrollment)}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(enrollment)} disabled={deletingId === (enrollment.id ?? enrollment.enrollmentId)}>
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
                 )}
               </TableBody>
             </Table>

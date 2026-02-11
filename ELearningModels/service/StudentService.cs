@@ -21,7 +21,7 @@ namespace ELearningModels.service
         public async Task<IEnumerable<StudentCreateDto>> GetAllAsync()
         {
             var students = await _userManager.GetUsersInRoleAsync(nameof(UserRoleType.Student));
-            return students.Select(u => MapToDto(u));
+            return students.Select(u => MapToDto(u)).ToList();
         }
 
         public async Task<StudentCreateDto?> GetByIdAsync(int id)
@@ -40,6 +40,14 @@ namespace ELearningModels.service
             if (string.IsNullOrWhiteSpace(dto.Password))
                 throw new ArgumentException("Password is required for new student.");
 
+            // Verify department exists if provided
+            if (dto.DepartmentID.HasValue && dto.DepartmentID.Value > 0)
+            {
+                var deptExists = await _context.Departments.AnyAsync(d => d.DepartmentID == dto.DepartmentID);
+                if (!deptExists)
+                    throw new Exception("Department not found.");
+            }
+
             var user = new ApplicationUser
             {
                 UserName = dto.Email,
@@ -48,6 +56,7 @@ namespace ELearningModels.service
                 FirstMidName = dto.FirstMidName,
                 LastName = dto.LastName,
                 EnrollmentDate = dto.EnrollmentDate,
+                DepartmentID = dto.DepartmentID,
                 RoleType = UserRoleType.Student
             };
 
@@ -71,6 +80,14 @@ namespace ELearningModels.service
             if (!isStudent)
                 return null;
 
+            // Verify department exists if provided
+            if (dto.DepartmentID.HasValue && dto.DepartmentID.Value > 0)
+            {
+                var deptExists = await _context.Departments.AnyAsync(d => d.DepartmentID == dto.DepartmentID);
+                if (!deptExists)
+                    throw new Exception("Department not found.");
+            }
+
             user.FirstMidName = dto.FirstMidName;
             user.LastName = dto.LastName;
             user.Email = dto.Email;
@@ -79,6 +96,7 @@ namespace ELearningModels.service
             user.NormalizedUserName = _userManager.NormalizeName(dto.Email);
             user.PhoneNumber = dto.PhoneNumber;
             user.EnrollmentDate = dto.EnrollmentDate;
+            user.DepartmentID = dto.DepartmentID;
 
             if (!string.IsNullOrWhiteSpace(dto.Password))
             {
@@ -163,17 +181,29 @@ namespace ELearningModels.service
             return students;
         }
 
-        private static StudentCreateDto MapToDto(ApplicationUser u)
+        private StudentCreateDto MapToDto(ApplicationUser u)
         {
-            return new StudentCreateDto
+            var dto = new StudentCreateDto
             {
                 Id = u.Id,
                 FirstMidName = u.FirstMidName,
                 LastName = u.LastName,
                 Email = u.Email ?? "",
                 PhoneNumber = u.PhoneNumber,
-                EnrollmentDate = u.EnrollmentDate
+                EnrollmentDate = u.EnrollmentDate,
+                DepartmentID = u.DepartmentID
             };
+
+            // Load department name if DepartmentID is set
+            if (u.DepartmentID.HasValue)
+            {
+                var dept = _context.Departments
+                    .AsNoTracking()
+                    .FirstOrDefault(d => d.DepartmentID == u.DepartmentID);
+                dto.DepartmentName = dept?.Name;
+            }
+
+            return dto;
         }
     }
 }

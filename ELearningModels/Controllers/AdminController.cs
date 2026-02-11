@@ -45,6 +45,7 @@ namespace ELearningModels.Controllers
 
         // GET: api/admin/role/{roleId}
         // Returns users filtered by numeric role id (matches UserRoleType enum)
+        // IMPORTANT: This must come BEFORE the generic {id} route to avoid conflicts
         [HttpGet("role/{roleId}")]
         public async Task<IActionResult> GetByRoleId(int roleId)
         {
@@ -92,6 +93,22 @@ namespace ELearningModels.Controllers
                 enrollmentDate = user.EnrollmentDate,
                 profilePhotoUrl = user.ProfilePhotoUrl
             });
+        }
+
+        // DELETE: api/admin/{id:int}
+        [HttpDelete("{id:int}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> DeleteAdmin(int id)
+        {
+            var user = await _userManager.FindByIdAsync(id.ToString());
+            if (user == null)
+                return NotFound(new { message = "Admin not found" });
+
+            var result = await _userManager.DeleteAsync(user);
+            if (!result.Succeeded)
+                return BadRequest(new { message = "Failed to delete admin", errors = result.Errors });
+
+            return Ok(new { message = "Admin deleted successfully" });
         }
     }
 }
