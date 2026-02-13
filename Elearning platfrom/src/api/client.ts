@@ -1,6 +1,11 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
 
-const API_BASE_URL = "http://localhost:5295";
+interface CustomError extends Error {
+  response?: AxiosError['response'];
+}
+
+// Prefer explicit Vite env var, fall back to common backend launch URL
+const API_BASE_URL = (import.meta.env && import.meta.env.VITE_API_URL) || process.env.REACT_APP_API_URL || "http://localhost:52103";
 
 const client: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -24,6 +29,8 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+console.log('[API client] Using base URL:', API_BASE_URL);
+
 // Response interceptor for error handling
 client.interceptors.response.use(
   (response) => {
@@ -34,20 +41,57 @@ client.interceptors.response.use(
   },
   (error: AxiosError<{ message?: string; error?: string }>) => {
     const data = error.response?.data;
+    const status = error.response?.status;
+    
     console.error(`[API] ✗ ${error.config?.method?.toUpperCase()} ${error.config?.url}`, {
-      status: error.response?.status,
+      status: status,
       message: data?.message ?? data?.error ?? error.message,
     });
     if (data && Object.keys(data).length > 0) {
       console.error('[API] Response body:', data);
     }
     
-    if (error.response?.status === 401) {
-      console.error("Unauthorized - Token may be invalid or expired");
+    // Enhanced error handling for different status codes
+    if (status === 401) {
+      console.error("Unauthorized - Invalid credentials or expired token");
       localStorage.removeItem("token");
-      // Optionally reload page to trigger login redirect
-      // window.location.href = '/login';
+      localStorage.removeItem("user");
+      
+      // Create a more user-friendly error message
+      const errorMessage = data?.message || "Your session has expired or credentials are invalid. Please log in again.";
+      const customError = new Error(errorMessage) as CustomError;
+      customError.response = error.response;
+      return Promise.reject(customError);
     }
+    
+    if (status === 403) {
+      const errorMessage = data?.message || "You don't have permission to access this resource";
+      const customError = new Error(errorMessage) as CustomError;
+      customError.response = error.response;
+      return Promise.reject(customError);
+    }
+    
+    if (status === 400) {
+      const errorMessage = data?.message || data?.error || "Invalid request";
+      const customError = new Error(errorMessage) as CustomError;
+      customError.response = error.response;
+      return Promise.reject(customError);
+    }
+    
+    if (status === 404) {
+      const errorMessage = data?.message || "Resource not found";
+      const customError = new Error(errorMessage) as CustomError;
+      customError.response = error.response;
+      return Promise.reject(customError);
+    }
+    
+    if (status === 500) {
+      const errorMessage = data?.message || "Server error. Please try again later";
+      const customError = new Error(errorMessage) as CustomError;
+      customError.response = error.response;
+      return Promise.reject(customError);
+    }
+    
     return Promise.reject(error);
   }
 );

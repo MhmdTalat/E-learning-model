@@ -1,4 +1,4 @@
-import { Menu, X, Search } from "lucide-react";
+import { Menu, X, Search, BookOpen, LayoutDashboard, Building2, Users, FileText } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "./ui/button";
@@ -12,23 +12,38 @@ const Navbar = () => {
     { name: "Categories", href: "/#categories" },
     { name: "Analytics", href: "/analytics" },
     { name: "Dashboard", href: "/dashboard" },
+    { name: "Instructor Enrollment", href: "/dashboard/instructor-enrollment" },
+  ];
+
+  const menuItems = [
+    { icon: LayoutDashboard, label: "Overview", href: "/dashboard" },
+    { icon: Building2, label: "Departments", href: "/dashboard/departments" },
+    { icon: BookOpen, label: "Courses", href: "/dashboard/courses" },
+    { icon: Users, label: "Instructors", href: "/dashboard/instructors" },
+    { icon: Users, label: "Students", href: "/dashboard/students" },
+    { icon: FileText, label: "Enrollments", href: "/dashboard/enrollments" },
+    { icon: BookOpen, label: "Instructor Enrollment", href: "/dashboard/instructor-enrollment" },
   ];
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 md:h-20">
+          {/* Logo */}
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-bold">CourseHub</span>
+          </div>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-8">
             {navLinks.map((link) => (
-              <Link
+              <a
                 key={link.name}
-                to={link.href}
-                className="text-muted-foreground hover:text-foreground transition-colors font-medium"
+                href={link.href}
+                className="text-muted-foreground hover:text-foreground transition-colors font-medium text-sm"
               >
                 {link.name}
-              </Link>
+              </a>
             ))}
           </div>
 
@@ -63,22 +78,33 @@ const Navbar = () => {
           <div className="md:hidden py-4 border-t border-border animate-fade-in">
             <div className="flex flex-col gap-2">
               {navLinks.map((link) => (
-                <Link
+                <a
                   key={link.name}
-                  to={link.href}
-                  className="px-4 py-3 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors font-medium"
+                  href={link.href}
+                  className="px-4 py-3 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors font-medium text-sm"
                   onClick={() => setIsOpen(false)}
                 >
                   {link.name}
-                </Link>
+                </a>
               ))}
-              <div className="flex flex-col gap-2 mt-4 px-4">
-                <Link to="/login" onClick={() => setIsOpen(false)}>
-                  <Button variant="ghost" className="w-full justify-center">Sign In</Button>
-                </Link>
-                <Link to="/register" onClick={() => setIsOpen(false)}>
-                  <Button variant="accent" className="w-full justify-center">Get Started</Button>
-                </Link>
+
+              {/* Dashboard Menu Items */}
+              <div className="px-4 py-3 border-t border-border">
+                <p className="text-xs font-semibold text-muted-foreground mb-2">DASHBOARD</p>
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.label}
+                      to={item.href}
+                      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-secondary transition-colors text-sm text-muted-foreground hover:text-foreground"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
           </div>

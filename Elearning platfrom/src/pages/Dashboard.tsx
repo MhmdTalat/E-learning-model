@@ -1,5 +1,6 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import client from '@/api/client';
 import { useTheme } from '@/context/ThemeContext';
 import DashboardOverview from './DashboardOverview';
 import { 
@@ -36,6 +37,13 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const apiBase = (client.defaults.baseURL || '').toString().replace(/\/$/, '');
+  const normalizeUrl = (url?: string) => {
+    if (!url) return undefined;
+    if (url.startsWith('http') || url.startsWith('data:')) return url;
+    return `${apiBase}/${url.replace(/^\/+/, '')}`;
+  };
   
   const canViewAnalysis = user?.role === 'Instructor' || user?.role === 'Admin';
 
@@ -107,10 +115,21 @@ const Dashboard = () => {
         {/* User Info */}
         <div className="p-4 mx-4 mt-4 bg-muted/50 rounded-xl">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-accent rounded-full flex items-center justify-center">
-              <span className="text-accent-foreground font-semibold">
-                {user?.name?.charAt(0).toUpperCase()}
-              </span>
+            <div className="relative">
+              {user?.profilePhotoUrl && !imageError ? (
+                <img
+                  src={normalizeUrl(user.profilePhotoUrl)}
+                  alt={user?.name || 'User'}
+                  onError={() => setImageError(true)}
+                  className="w-10 h-10 rounded-full object-cover border-2 border-border shadow-sm transform transition-transform hover:scale-105"
+                />
+              ) : (
+                <div className="w-10 h-10 bg-accent rounded-full flex items-center justify-center">
+                  <span className="text-accent-foreground font-semibold">
+                    {user?.name?.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-foreground truncate">{user?.name}</div>

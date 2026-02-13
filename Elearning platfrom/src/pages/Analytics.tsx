@@ -289,19 +289,24 @@ const Analytics = () => {
         const colors = ['hsl(199, 89%, 48%)', 'hsl(280, 65%, 60%)', 'hsl(38, 92%, 50%)', 'hsl(142, 76%, 36%)', 'hsl(10, 80%, 50%)', 'hsl(260,60%,60%)'];
 
         const getDeptKey = (d: Department) => d.departmentID ?? d.departmentId ?? d.departmentName ?? d.name ?? null;
-        const getCourseDeptKey = (c: Course | Record<string, unknown>) => (c as any).departmentID ?? (c as any).departmentId ?? (c as any).departmentName ?? (c as any).department ?? null;
+        const getCourseDeptKey = (c: Course | Record<string, unknown>) => {
+          const rc = c as unknown as Record<string, unknown>;
+          return rc['departmentID'] ?? rc['departmentId'] ?? rc['departmentName'] ?? rc['department'] ?? null;
+        };
 
         // build course lookup map
         const courseById = new Map<string, Course>();
         allCourses.forEach((c) => {
-          const id = (c as any).courseID ?? (c as any).id ?? null;
+          const rc = c as unknown as Record<string, unknown>;
+          const id = rc['courseID'] ?? rc['id'] ?? null;
           if (id != null) courseById.set(String(id), c);
         });
 
         // build student lookup map
         const studentById = new Map<string, Student>();
         allStudents.forEach((s) => {
-          const id = (s as any).studentID ?? (s as any).id ?? null;
+          const rs = s as unknown as Record<string, unknown>;
+          const id = rs['studentID'] ?? rs['id'] ?? null;
           if (id != null) studentById.set(String(id), s);
         });
 
@@ -314,11 +319,12 @@ const Analytics = () => {
         });
 
         allEnrollments.forEach((en) => {
+          const ren = en as unknown as Record<string, unknown>;
           // try to get student id
-          const sid = (en as any).studentId ?? (en as any).studentID ?? (en as any).userId ?? null;
+          const sid = ren['studentId'] ?? ren['studentID'] ?? ren['userId'] ?? null;
 
           // try to determine department via course relation
-          const cid = (en as any).courseId ?? (en as any).courseID ?? (en as any).course ?? null;
+          const cid = ren['courseId'] ?? ren['courseID'] ?? ren['course'] ?? null;
           let deptKey: unknown = null;
           if (cid != null) {
             const course = courseById.get(String(cid));
@@ -327,13 +333,16 @@ const Analytics = () => {
 
           // fallback to enrollment's own department fields
           if (deptKey == null) {
-            deptKey = (en as any).departmentID ?? (en as any).departmentId ?? (en as any).departmentName ?? (en as any).department ?? null;
+            deptKey = ren['departmentID'] ?? ren['departmentId'] ?? ren['departmentName'] ?? ren['department'] ?? null;
           }
 
           // fallback to student's department
           if (deptKey == null && sid != null) {
             const student = studentById.get(String(sid));
-            if (student) deptKey = (student as any).departmentID ?? (student as any).departmentId ?? (student as any).departmentName ?? null;
+            if (student) {
+              const rs = student as unknown as Record<string, unknown>;
+              deptKey = rs['departmentID'] ?? rs['departmentId'] ?? rs['departmentName'] ?? null;
+            }
           }
 
           if (deptKey == null) return;

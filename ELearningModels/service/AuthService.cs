@@ -217,13 +217,100 @@ namespace ELearningModels.service
             {
                 id = user.Id,
                 userName = user.UserName,
+                name = $"{user.FirstMidName} {user.LastName}".Trim(),
                 email = user.Email,
                 firstName = user.FirstMidName,
                 lastName = user.LastName,
                 phoneNumber = user.PhoneNumber,
                 enrollmentDate = user.EnrollmentDate,
                 role = role,
-                roleType = user.RoleType
+                roleType = user.RoleType,
+                bio = user.Bio,
+                profilePhotoUrl = user.ProfilePhotoUrl,
+                dateOfBirth = user.DateOfBirth,
+                address = user.Address,
+                company = user.Company
+            };
+        }
+
+        public async Task<dynamic> UpdateProfileAsync(string userId, UpdateProfileDto dto)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+                throw new InvalidOperationException("User not found");
+
+            // Handle profile photo upload if provided
+            if (dto.ProfilePhoto != null)
+            {
+                var photoUrl = await SaveProfilePhotoAsync(dto.ProfilePhoto);
+                if (photoUrl != null)
+                {
+                    user.ProfilePhotoUrl = photoUrl;
+                }
+            }
+
+            // Update fields only if provided
+            if (!string.IsNullOrWhiteSpace(dto.FirstMidName))
+                user.FirstMidName = dto.FirstMidName;
+            
+            if (!string.IsNullOrWhiteSpace(dto.LastName))
+                user.LastName = dto.LastName;
+            
+            if (!string.IsNullOrWhiteSpace(dto.Email))
+            {
+                // Check if email is changing and if new email is already taken
+                if (dto.Email != user.Email)
+                {
+                    var existingUser = await _userManager.FindByEmailAsync(dto.Email);
+                    if (existingUser != null && existingUser.Id != user.Id)
+                        throw new InvalidOperationException("Email is already in use");
+                    
+                    user.Email = dto.Email;
+                    user.UserName = dto.Email;
+                }
+            }
+            
+            if (dto.PhoneNumber != null)
+                user.PhoneNumber = dto.PhoneNumber;
+            
+            if (dto.Bio != null)
+                user.Bio = dto.Bio;
+            
+            if (dto.DateOfBirth.HasValue)
+                user.DateOfBirth = dto.DateOfBirth;
+            
+            if (dto.Address != null)
+                user.Address = dto.Address;
+            
+            if (dto.Company != null)
+                user.Company = dto.Company;
+
+            // Update user in database
+            var result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+                throw new Exception(string.Join(", ", result.Errors.Select(e => e.Description)));
+
+            // Return updated user data
+            var roles = await _userManager.GetRolesAsync(user);
+            var role = roles.FirstOrDefault() ?? "Student";
+
+            return new
+            {
+                id = user.Id,
+                userName = user.UserName,
+                name = $"{user.FirstMidName} {user.LastName}".Trim(),
+                email = user.Email,
+                firstName = user.FirstMidName,
+                lastName = user.LastName,
+                phoneNumber = user.PhoneNumber,
+                enrollmentDate = user.EnrollmentDate,
+                role = role,
+                roleType = user.RoleType,
+                bio = user.Bio,
+                profilePhotoUrl = user.ProfilePhotoUrl,
+                dateOfBirth = user.DateOfBirth,
+                address = user.Address,
+                company = user.Company
             };
         }
     }

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using ELearningModels.DTO;
 using ELearningModels.Iservice;
 using ELearningModels.model;
+using ELearningModels.Data;
 
 namespace ELearningModels.Controllers
 {
@@ -11,10 +12,12 @@ namespace ELearningModels.Controllers
     public class InstructorController : ControllerBase
     {
         private readonly IInstructorService _service;
+        private readonly AppDbContext _context;
 
-        public InstructorController(IInstructorService service)
+        public InstructorController(IInstructorService service, AppDbContext context)
         {
             _service = service;
+            _context = context;
         }
 
         // GET: api/instructor
@@ -60,7 +63,7 @@ namespace ELearningModels.Controllers
             if (result == null)
                 return NotFound(new { message = "Instructor not found" });
 
-            return Ok(result);  // or return NoContent() if you prefer
+            return Ok(result);
         }
 
         // DELETE: api/instructor/5
@@ -73,6 +76,60 @@ namespace ELearningModels.Controllers
                 return NotFound(new { message = "Instructor not found" });
 
             return Ok(new { message = "Instructor deleted successfully" });
+        }
+
+        // GET: api/instructor-courses
+        [HttpGet("courses")]
+        public async Task<IActionResult> GetInstructorCourses()
+        {
+            var courses = await _service.GetInstructorCoursesAsync();
+            return Ok(courses);
+        }
+
+        // GET: api/instructor/5/available-courses
+        [HttpGet("{id}/available-courses")]
+        public async Task<IActionResult> GetAvailableCourses(int id)
+        {
+            try
+            {
+                var courses = await _service.GetAvailableCoursesAsync(id);
+                return Ok(courses);
+            }
+            catch (Exception ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        // POST: api/instructor-courses/assign
+        [HttpPost("courses/assign")]
+        [Authorize(Roles = "Instructor,Admin")]
+        public async Task<IActionResult> AssignCourse([FromBody] AssignCourseDto dto)
+        {
+            try
+            {
+                if (dto.InstructorID <= 0 || dto.CourseID <= 0)
+                    return BadRequest(new { message = "Invalid instructor or course ID" });
+
+                await _service.AssignCourseAsync(dto.InstructorID, dto.CourseID);
+                return Ok(new { message = "Course assigned successfully" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        // DELETE: api/instructor-courses/5
+        [HttpDelete("courses/{id}")]
+        [Authorize(Roles = "Instructor,Admin")]
+        public async Task<IActionResult> RemoveEnrollment(int id)
+        {
+            var result = await _service.RemoveEnrollmentAsync(id);
+            if (!result)
+                return NotFound(new { message = "Enrollment not found" });
+
+            return Ok(new { message = "Enrollment removed successfully" });
         }
     }
 }

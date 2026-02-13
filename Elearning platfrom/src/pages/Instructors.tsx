@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { UserCheck, Plus, Search, Edit, Trash2, MoreHorizontal, Mail, BookOpen } from 'lucide-react';
+import { UserCheck, Plus, Search, Edit, Trash2, MoreHorizontal, Mail, BookOpen, Link as LinkIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { AxiosError } from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,7 +51,17 @@ interface Department {
   departmentName?: string;
 }
 
+interface Course {
+  id?: number;
+  courseID?: number;
+  name?: string;
+  courseName?: string;
+  code?: string;
+  courseCode?: string;
+}
+
 const Instructors = () => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -75,6 +86,14 @@ const Instructors = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [assignInstructor, setAssignInstructor] = useState<Instructor | null>(null);
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignLoading, setAssignLoading] = useState(false);
 
   const fetchInstructors = async () => {
     try {
@@ -94,8 +113,18 @@ const Instructors = () => {
     }
   };
 
+  const fetchDepartments = async () => {
+    try {
+      const response = await departmentsAPI.getAll();
+      setDepartments(Array.isArray(response?.data) ? response.data : []);
+    } catch (err) {
+      console.error('Failed to load departments:', err);
+    }
+  };
+
   useEffect(() => {
     fetchInstructors();
+    fetchDepartments();
   }, []);
 
   useEffect(() => {
@@ -189,11 +218,40 @@ const Instructors = () => {
     try {
       await instructorsAPI.delete(id);
       await fetchInstructors();
+      // remove from selection if present
+      setSelectedIds(prev => prev.filter(x => x !== id));
     } catch (err: unknown) {
       const errorMessage = err instanceof Error && 'response' in err ? (err as AxiosError<{ message?: string }>).response?.data?.message ?? err.message : err instanceof Error ? err.message : 'Failed to delete';
       alert(errorMessage);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    const allIds = filteredInstructors.map(i => i.instructorID ?? i.id).filter(Boolean) as number[];
+    const allSelected = allIds.length > 0 && allIds.every(id => selectedIds.includes(id));
+    if (allSelected) setSelectedIds([]);
+    else setSelectedIds(allIds);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Delete ${selectedIds.length} selected instructor(s)?`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => instructorsAPI.delete(id)));
+      await fetchInstructors();
+      setSelectedIds([]);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error && 'response' in err ? (err as AxiosError<{ message?: string }>).response?.data?.message ?? err.message : err instanceof Error ? err.message : 'Failed to delete selected';
+      alert(errorMessage);
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -205,6 +263,66 @@ const Instructors = () => {
 
   const getStatusColor = (status: string) => {
     return 'bg-success/10 text-success';
+  };
+
+  const getDepartmentName = (deptId?: number) => {
+    if (!deptId) return '—';
+    const dept = departments.find(d => 
+      (d.departmentID ?? d.departmentId ?? d.id) === deptId
+    );
+    return dept?.name ?? dept?.departmentName ?? '—';
+  };
+
+  const handleAssignCourses = (inst: Instructor) => {
+    const instId = inst.instructorID ?? inst.id;
+    navigate(`/dashboard/instructor-enrollment?instructor=${instId}`);
+  };
+
+  const openAssignModal = async (inst: Instructor) => {
+    setAssignError(null);
+    setAssignInstructor(inst);
+    setSelectedCourseId('');
+    setAvailableCourses([]);
+    setAssignOpen(true);
+    try {
+      const res = await fetch(API(`/api/instructors/${inst.instructorID}/available-courses`), { headers: { Accept: 'application/json' }});
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setAvailableCourses(Array.isArray(data) ? data : (data?.data ?? []));
+    } catch (err: unknown) {
+      console.error('Error loading available courses:', err);
+      setAssignError(err instanceof Error ? err.message : 'Failed to load available courses');
+    }
+  };
+
+  const submitAssign = async () => {
+    if (!assignInstructor || !selectedCourseId) { setAssignError('Select a course'); return; }
+    setAssignLoading(true);
+    setAssignError(null);
+    try {
+      const res = await fetch(API('/api/instructor-courses/assign'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructorID: Number(assignInstructor.instructorID), courseID: Number(selectedCourseId) }),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
+      setAssignOpen(false);
+      setAssignInstructor(null);
+      // optional: call your refresh function here (e.g., reload instructors or enrollments)
+    } catch (err: any) {
+      console.error('Assign error:', err);
+      setAssignError(err?.message || 'Failed to assign');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const API = (path: string) => {
+    const base = import.meta.env.VITE_API_BASE ?? 'http://localhost:52103';
+    return `${base}${path}`;
   };
 
   if (loading) {
@@ -236,10 +354,15 @@ const Instructors = () => {
           <h2 className="text-2xl font-bold text-foreground">Instructors</h2>
           <p className="text-muted-foreground">Manage teaching staff</p>
         </div>
-        <Button className="bg-accent hover:bg-accent/90 text-accent-foreground" onClick={handleOpenAdd}>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Instructor
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button className="bg-destructive/10 text-destructive hover:bg-destructive/20" onClick={handleBulkDelete} disabled={selectedIds.length === 0 || bulkDeleting}>
+            {bulkDeleting ? 'Deleting...' : `Delete Selected (${selectedIds.length})`}
+          </Button>
+          <Button className="bg-accent hover:bg-accent/90 text-accent-foreground" onClick={handleOpenAdd}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Instructor
+          </Button>
+        </div>
       </div>
 
       <Dialog open={openAddDialog} onOpenChange={setOpenAddDialog}>
@@ -363,6 +486,9 @@ const Instructors = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
+                  <TableHead className="w-12 text-center">
+                    <input type="checkbox" aria-label="Select all" onChange={toggleSelectAll} checked={filteredInstructors.length > 0 && filteredInstructors.every(i => selectedIds.includes(i.instructorID ?? i.id ?? -1))} />
+                  </TableHead>
                   <TableHead>Instructor</TableHead>
                   <TableHead>Department</TableHead>
                   <TableHead className="text-center">Courses</TableHead>
@@ -375,13 +501,21 @@ const Instructors = () => {
               <TableBody>
                 {filteredInstructors.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No instructors found
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredInstructors.map((inst) => (
                     <TableRow key={inst.instructorID ?? inst.id ?? ''} className="hover:bg-muted/50">
+                      <TableCell className="text-center">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select instructor ${inst.firstMidName ?? inst.firstName}`}
+                          checked={selectedIds.includes((inst.instructorID ?? inst.id) as number)}
+                          onChange={() => { const id = inst.instructorID ?? inst.id; if (id) toggleSelect(id); }}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-accent/20 rounded-full flex items-center justify-center">
@@ -398,7 +532,7 @@ const Instructors = () => {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>Dept {inst.departmentID ?? inst.departmentId ?? '—'}</TableCell>
+                      <TableCell>{getDepartmentName(inst.departmentID ?? inst.departmentId)}</TableCell>
                       <TableCell className="text-center">0</TableCell>
                       <TableCell className="text-center">0</TableCell>
                       <TableCell className="text-center">★ 0</TableCell>
@@ -416,6 +550,10 @@ const Instructors = () => {
                             <DropdownMenuItem onClick={() => handleOpenEdit(inst)}>
                               <Edit className="w-4 h-4 mr-2" />
                               Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleAssignCourses(inst)}>
+                              <BookOpen className="w-4 h-4 mr-2" />
+                              Assign Courses
                             </DropdownMenuItem>
                             <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(inst)} disabled={deletingId === (inst.instructorID ?? inst.id)}>
                               <Trash2 className="w-4 h-4 mr-2" />

@@ -31,85 +31,127 @@ namespace ELearningModels.service
         #region Retrieval Methods
 
         /// <summary>
-        /// Retrieves all enrollments in the system.
+        /// Retrieves all enrollments in the system with related course and department information.
         /// </summary>
-        /// <returns>A collection of all enrollment DTOs.</returns>
-        public async Task<IEnumerable<EnrollmentCreateDto>> GetAllAsync()
+        /// <returns>A collection of all enrollment detail DTOs.</returns>
+        public async Task<IEnumerable<EnrollmentDetailDto>> GetAllAsync()
         {
             return await _context.Enrollments
-                .Select(enrollment => new EnrollmentCreateDto
+                .Include(e => e.Course)
+                .ThenInclude(c => c.Department)
+                .Include(e => e.Student)
+                .Select(enrollment => new EnrollmentDetailDto
                 {
                     EnrollmentID = enrollment.EnrollmentID,
                     CourseID = enrollment.CourseID,
                     StudentID = enrollment.StudentID,
-                    Grade = enrollment.Grade
+                    Grade = enrollment.Grade,
+                    EnrollmentDate = enrollment.EnrollmentDate,
+                    CourseName = enrollment.Course.Title,
+                    Credits = enrollment.Course.Credits,
+                    DepartmentID = enrollment.Course.DepartmentID,
+                    DepartmentName = enrollment.Course.Department.Name,
+                    StudentName = enrollment.Student.FirstMidName + " " + enrollment.Student.LastName,
+                    StudentEmail = enrollment.Student.Email
                 })
                 .ToListAsync();
         }
 
         /// <summary>
-        /// Retrieves a specific enrollment by its ID.
+        /// Retrieves a specific enrollment by its ID with related course and department information.
         /// </summary>
         /// <param name="id">The enrollment ID to retrieve.</param>
-        /// <returns>The enrollment DTO if found; otherwise, null.</returns>
-        public async Task<EnrollmentCreateDto?> GetByIdAsync(int id)
+        /// <returns>The enrollment detail DTO if found; otherwise, null.</returns>
+        public async Task<EnrollmentDetailDto?> GetByIdAsync(int id)
         {
             if (id <= 0)
                 throw new ArgumentException("Enrollment ID must be greater than zero.", nameof(id));
 
-            var enrollment = await _context.Enrollments.FindAsync(id);
+            var enrollment = await _context.Enrollments
+                .Include(e => e.Course)
+                .ThenInclude(c => c.Department)
+                .Include(e => e.Student)
+                .FirstOrDefaultAsync(e => e.EnrollmentID == id);
+
             if (enrollment == null)
                 return null;
 
-            return new EnrollmentCreateDto
+            return new EnrollmentDetailDto
             {
                 EnrollmentID = enrollment.EnrollmentID,
                 CourseID = enrollment.CourseID,
                 StudentID = enrollment.StudentID,
-                Grade = enrollment.Grade
+                Grade = enrollment.Grade,
+                EnrollmentDate = enrollment.EnrollmentDate,
+                CourseName = enrollment.Course.Title,
+                Credits = enrollment.Course.Credits,
+                DepartmentID = enrollment.Course.DepartmentID,
+                DepartmentName = enrollment.Course.Department.Name,
+                StudentName = enrollment.Student.FirstMidName + " " + enrollment.Student.LastName,
+                StudentEmail = enrollment.Student.Email
             };
         }
 
         /// <summary>
-        /// Retrieves all enrollments for a specific student.
+        /// Retrieves all enrollments for a specific student with course and department details.
         /// </summary>
         /// <param name="studentId">The student ID to retrieve enrollments for.</param>
-        /// <returns>A collection of enrollment DTOs for the specified student.</returns>
-        public async Task<IEnumerable<EnrollmentCreateDto>> GetEnrollmentsByStudentAsync(int studentId)
+        /// <returns>A collection of enrollment detail DTOs for the specified student.</returns>
+        public async Task<IEnumerable<EnrollmentDetailDto>> GetEnrollmentsByStudentAsync(int studentId)
         {
             if (studentId <= 0)
                 throw new ArgumentException("Student ID must be greater than zero.", nameof(studentId));
 
             return await _context.Enrollments
                 .Where(enrollment => enrollment.StudentID == studentId)
-                .Select(enrollment => new EnrollmentCreateDto
+                .Include(e => e.Course)
+                .ThenInclude(c => c.Department)
+                .Include(e => e.Student)
+                .Select(enrollment => new EnrollmentDetailDto
                 {
                     EnrollmentID = enrollment.EnrollmentID,
                     CourseID = enrollment.CourseID,
                     StudentID = enrollment.StudentID,
-                    Grade = enrollment.Grade
+                    Grade = enrollment.Grade,
+                    EnrollmentDate = enrollment.EnrollmentDate,
+                    CourseName = enrollment.Course.Title,
+                    Credits = enrollment.Course.Credits,
+                    DepartmentID = enrollment.Course.DepartmentID,
+                    DepartmentName = enrollment.Course.Department.Name,
+                    StudentName = enrollment.Student.FirstMidName + " " + enrollment.Student.LastName,
+                    StudentEmail = enrollment.Student.Email
                 })
                 .ToListAsync();
         }
 
         /// <summary>
-        /// Retrieves all enrollments for a specific course.
+        /// Retrieves all enrollments for a specific course with student and department details.
         /// </summary>
         /// <param name="courseId">The course ID to retrieve enrollments for.</param>
-        /// <returns>A collection of enrollment DTOs for the specified course.</returns>
-        public async Task<IEnumerable<EnrollmentCreateDto>> GetEnrollmentsByCourseAsync(int courseId)
+        /// <returns>A collection of enrollment detail DTOs for the specified course.</returns>
+        public async Task<IEnumerable<EnrollmentDetailDto>> GetEnrollmentsByCourseAsync(int courseId)
         {
             if (courseId <= 0)
                 throw new ArgumentException("Course ID must be greater than zero.", nameof(courseId));
 
             return await _context.Enrollments
                 .Where(enrollment => enrollment.CourseID == courseId)
-                .Select(enrollment => new EnrollmentCreateDto
+                .Include(e => e.Course)
+                .ThenInclude(c => c.Department)
+                .Include(e => e.Student)
+                .Select(enrollment => new EnrollmentDetailDto
                 {
                     EnrollmentID = enrollment.EnrollmentID,
                     CourseID = enrollment.CourseID,
                     StudentID = enrollment.StudentID,
-                    Grade = enrollment.Grade
+                    Grade = enrollment.Grade,
+                    EnrollmentDate = enrollment.EnrollmentDate,
+                    CourseName = enrollment.Course.Title,
+                    Credits = enrollment.Course.Credits,
+                    DepartmentID = enrollment.Course.DepartmentID,
+                    DepartmentName = enrollment.Course.Department.Name,
+                    StudentName = enrollment.Student.FirstMidName + " " + enrollment.Student.LastName,
+                    StudentEmail = enrollment.Student.Email
                 })
                 .ToListAsync();
         }

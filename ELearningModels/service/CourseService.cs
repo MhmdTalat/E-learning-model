@@ -20,6 +20,16 @@ namespace ELearningModels.service
             return await _context.Courses.ToListAsync();
         }
 
+        public async Task<IEnumerable<Course>> GetByDepartmentAsync(int departmentId)
+        {
+            if (departmentId <= 0)
+                throw new ArgumentException("Department ID must be greater than zero.", nameof(departmentId));
+
+            return await _context.Courses
+                .Where(c => c.DepartmentID == departmentId)
+                .ToListAsync();
+        }
+
         public async Task<Course> CreateAsync(CourseCreateDto dto)
         {
             var course = new Course

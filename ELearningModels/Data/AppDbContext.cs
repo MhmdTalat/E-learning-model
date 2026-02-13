@@ -56,6 +56,12 @@ namespace ELearningModels.Data
             builder.Entity<Enrollment>()
                 .HasIndex(e => new { e.StudentID, e.CourseID })
                 .IsUnique();
+
+            builder.Entity<ApplicationUser>()
+                .HasOne(a => a.Department)
+                .WithMany(d => d.Students)
+                .HasForeignKey(a => a.DepartmentID)
+                .OnDelete(DeleteBehavior.SetNull);
         }
     }
 }

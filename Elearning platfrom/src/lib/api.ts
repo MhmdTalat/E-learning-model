@@ -60,6 +60,7 @@ export const authAPI = {
 export const coursesAPI = {
   getAll: () => apiClient.get('/api/courses'),
   getById: (id: number) => apiClient.get(`/api/courses/${id}`),
+  getByDepartment: (departmentId: number) => apiClient.get(`/api/courses/department/${departmentId}`),
   create: (data: RequestData) => apiClient.post('/api/courses', data),
   update: (data: RequestData) => apiClient.put('/api/courses', data),
   delete: (id: number) => apiClient.delete(`/api/courses/${id}`),

@@ -14,5 +14,7 @@ namespace ELearningModels.model
         public ApplicationUser Student { get; set; } = null!;
 
         public decimal? Grade { get; set; }
+
+        public DateTime EnrollmentDate { get; set; } = DateTime.UtcNow;
     }
 }
