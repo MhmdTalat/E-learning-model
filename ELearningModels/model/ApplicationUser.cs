@@ -35,6 +35,9 @@ namespace ELearningModels.model
         [StringLength(100)]
         public string? Company { get; set; }
 
+        public int? DepartmentID { get; set; }
+        public virtual Department? Department { get; set; }
+
         // Relationships
         public ICollection<Enrollment> Enrollments { get; set; } = new List<Enrollment>();
     }

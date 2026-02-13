@@ -272,8 +272,9 @@ const Departments = () => {
       setOpenAddDialog(false);
       await fetchDepartments();
     } catch (err: unknown) {
-      const errObj = err as Record<string, unknown>;
-      const msg = ((errObj?.response as Record<string, unknown>)?.data?.message as string) ?? ((errObj?.response as Record<string, unknown>)?.data?.inner as string) ?? (typeof errObj?.message === 'string' ? errObj.message : 'Failed to create department');
+      const errObj = err as Record<string, unknown> & { message?: string; response?: Record<string, unknown> };
+      const data = (errObj?.response as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
+      const msg = (typeof data?.message === 'string' ? data.message : '') ?? (typeof data?.inner === 'string' ? data.inner : '') ?? (typeof errObj?.message === 'string' ? errObj.message : 'Failed to create department');
       setCreateError(msg);
     } finally {
       setCreating(false);
@@ -313,8 +314,10 @@ const Departments = () => {
       setEditingDept(null);
       await fetchDepartments();
     } catch (err: unknown) {
-      const errObj = err as Record<string, unknown>;
-      setEditError(((errObj?.response as Record<string, unknown>)?.data?.message as string) ?? ((errObj?.response as Record<string, unknown>)?.data?.inner as string) ?? (typeof errObj?.message === 'string' ? errObj.message : 'Failed to update department'));
+      const errObj = err as Record<string, unknown> & { message?: string; response?: Record<string, unknown> };
+      const data = (errObj?.response as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
+      const msg = (typeof data?.message === 'string' ? data.message : '') ?? (typeof data?.inner === 'string' ? data.inner : '') ?? (typeof errObj?.message === 'string' ? errObj.message : 'Failed to update department');
+      setEditError(msg);
     } finally {
       setUpdating(false);
     }
@@ -330,7 +333,9 @@ const Departments = () => {
       await fetchDepartments();
       setSelectedIds(prev => prev.filter(x => x !== id));
     } catch (err: unknown) {
-      const msg = ((err as Record<string, unknown>)?.response?.data?.message as string) ?? (typeof (err as Record<string, unknown>)?.message === 'string' ? (err as Record<string, unknown>)?.message : 'Failed to delete department');
+      const errObj = err as Record<string, unknown> & { message?: string; response?: Record<string, unknown> };
+      const data = (errObj?.response as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
+      const msg = (typeof data?.message === 'string' ? data.message : '') ?? (typeof errObj?.message === 'string' ? errObj.message : 'Failed to delete department');
       alert(msg);
     } finally {
       setDeletingId(null);
@@ -357,7 +362,9 @@ const Departments = () => {
       await fetchDepartments();
       setSelectedIds([]);
     } catch (err: unknown) {
-      const msg = ((err as Record<string, unknown>)?.response?.data?.message as string) ?? (typeof (err as Record<string, unknown>)?.message === 'string' ? (err as Record<string, unknown>)?.message : 'Failed to delete selected');
+      const errObj = err as Record<string, unknown> & { message?: string; response?: Record<string, unknown> };
+      const data = (errObj?.response as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
+      const msg = (typeof data?.message === 'string' ? data.message : '') ?? (typeof errObj?.message === 'string' ? errObj.message : 'Failed to delete selected');
       alert(msg);
     } finally {
       setBulkDeleting(false);

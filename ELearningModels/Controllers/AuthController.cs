@@ -172,5 +172,30 @@ namespace ELearningModels.Controllers
                     return BadRequest(new { message = ex.Message, error = ex.InnerException?.Message ?? "Password reset failed" });
                 }
             }
+
+            /// <summary>Update user profile (supports both JSON and FormData with photo)</summary>
+            [HttpPut("profile")]
+            [Authorize]
+            public async Task<IActionResult> UpdateProfile([FromForm] UpdateProfileDto dto)
+            {
+                try
+                {
+                    var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    if (string.IsNullOrEmpty(userId))
+                        return Unauthorized(new { message = "User ID not found in token" });
+
+                    var result = await _authService.UpdateProfileAsync(userId, dto);
+                    return Ok(result);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return BadRequest(new { message = ex.Message });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[UpdateProfile Error] {ex.Message}");
+                    return BadRequest(new { message = ex.Message });
+                }
+            }
         }
 }

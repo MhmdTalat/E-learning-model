@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { UserCheck, Plus, Search, Edit, Trash2, MoreHorizontal, Mail, BookOpen } from 'lucide-react';
+import { UserCheck, Plus, Search, Edit, Trash2, MoreHorizontal, Mail, BookOpen, Link as LinkIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { AxiosError } from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,7 +51,17 @@ interface Department {
   departmentName?: string;
 }
 
+interface Course {
+  id?: number;
+  courseID?: number;
+  name?: string;
+  courseName?: string;
+  code?: string;
+  courseCode?: string;
+}
+
 const Instructors = () => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -77,6 +88,12 @@ const Instructors = () => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [assignInstructor, setAssignInstructor] = useState<Instructor | null>(null);
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignLoading, setAssignLoading] = useState(false);
 
   const fetchInstructors = async () => {
     try {
@@ -96,8 +113,18 @@ const Instructors = () => {
     }
   };
 
+  const fetchDepartments = async () => {
+    try {
+      const response = await departmentsAPI.getAll();
+      setDepartments(Array.isArray(response?.data) ? response.data : []);
+    } catch (err) {
+      console.error('Failed to load departments:', err);
+    }
+  };
+
   useEffect(() => {
     fetchInstructors();
+    fetchDepartments();
   }, []);
 
   useEffect(() => {
@@ -236,6 +263,66 @@ const Instructors = () => {
 
   const getStatusColor = (status: string) => {
     return 'bg-success/10 text-success';
+  };
+
+  const getDepartmentName = (deptId?: number) => {
+    if (!deptId) return '—';
+    const dept = departments.find(d => 
+      (d.departmentID ?? d.departmentId ?? d.id) === deptId
+    );
+    return dept?.name ?? dept?.departmentName ?? '—';
+  };
+
+  const handleAssignCourses = (inst: Instructor) => {
+    const instId = inst.instructorID ?? inst.id;
+    navigate(`/dashboard/instructor-enrollment?instructor=${instId}`);
+  };
+
+  const openAssignModal = async (inst: Instructor) => {
+    setAssignError(null);
+    setAssignInstructor(inst);
+    setSelectedCourseId('');
+    setAvailableCourses([]);
+    setAssignOpen(true);
+    try {
+      const res = await fetch(API(`/api/instructors/${inst.instructorID}/available-courses`), { headers: { Accept: 'application/json' }});
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setAvailableCourses(Array.isArray(data) ? data : (data?.data ?? []));
+    } catch (err: unknown) {
+      console.error('Error loading available courses:', err);
+      setAssignError(err instanceof Error ? err.message : 'Failed to load available courses');
+    }
+  };
+
+  const submitAssign = async () => {
+    if (!assignInstructor || !selectedCourseId) { setAssignError('Select a course'); return; }
+    setAssignLoading(true);
+    setAssignError(null);
+    try {
+      const res = await fetch(API('/api/instructor-courses/assign'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructorID: Number(assignInstructor.instructorID), courseID: Number(selectedCourseId) }),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
+      setAssignOpen(false);
+      setAssignInstructor(null);
+      // optional: call your refresh function here (e.g., reload instructors or enrollments)
+    } catch (err: any) {
+      console.error('Assign error:', err);
+      setAssignError(err?.message || 'Failed to assign');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const API = (path: string) => {
+    const base = import.meta.env.VITE_API_BASE ?? 'http://localhost:52103';
+    return `${base}${path}`;
   };
 
   if (loading) {
@@ -445,7 +532,7 @@ const Instructors = () => {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>Dept {inst.departmentID ?? inst.departmentId ?? '—'}</TableCell>
+                      <TableCell>{getDepartmentName(inst.departmentID ?? inst.departmentId)}</TableCell>
                       <TableCell className="text-center">0</TableCell>
                       <TableCell className="text-center">0</TableCell>
                       <TableCell className="text-center">★ 0</TableCell>
@@ -463,6 +550,10 @@ const Instructors = () => {
                             <DropdownMenuItem onClick={() => handleOpenEdit(inst)}>
                               <Edit className="w-4 h-4 mr-2" />
                               Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleAssignCourses(inst)}>
+                              <BookOpen className="w-4 h-4 mr-2" />
+                              Assign Courses
                             </DropdownMenuItem>
                             <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(inst)} disabled={deletingId === (inst.instructorID ?? inst.id)}>
                               <Trash2 className="w-4 h-4 mr-2" />

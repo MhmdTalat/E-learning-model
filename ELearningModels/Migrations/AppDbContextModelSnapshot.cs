@@ -60,6 +60,9 @@ namespace ELearningModels.Migrations
                     b.Property<DateTime?>("DateOfBirth")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("DepartmentID")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Email")
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
@@ -122,6 +125,8 @@ namespace ELearningModels.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DepartmentID");
+
                     b.HasIndex("NormalizedEmail")
                         .HasDatabaseName("EmailIndex");
 
@@ -170,7 +175,6 @@ namespace ELearningModels.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("StartDate")
@@ -407,6 +411,16 @@ namespace ELearningModels.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ELearningModels.model.ApplicationUser", b =>
+                {
+                    b.HasOne("ELearningModels.model.Department", "Department")
+                        .WithMany("Students")
+                        .HasForeignKey("DepartmentID")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Department");
+                });
+
             modelBuilder.Entity("ELearningModels.model.Course", b =>
                 {
                     b.HasOne("ELearningModels.model.Department", "Department")
@@ -534,6 +548,8 @@ namespace ELearningModels.Migrations
                     b.Navigation("Courses");
 
                     b.Navigation("Instructors");
+
+                    b.Navigation("Students");
                 });
 
             modelBuilder.Entity("ELearningModels.model.Instructor", b =>

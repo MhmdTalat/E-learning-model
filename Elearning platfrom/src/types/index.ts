@@ -2,8 +2,13 @@ export interface User {
   id?: string;
   email: string;
   userName?: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
   role: "Student" | "Instructor" | "Admin";
   enrollmentDate?: string;
+  departmentId?: number;
+  department?: string;
   // Profile fields
   profilePhotoUrl?: string;
   bio?: string;

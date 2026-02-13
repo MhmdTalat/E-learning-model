@@ -166,8 +166,26 @@ const Enrollments = () => {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [departments, setDepartments] = useState<ApiDept[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeCount, setActiveCount] = useState<number>(0);
+  const [completedCount, setCompletedCount] = useState<number>(0);
+  const [droppedCount, setDroppedCount] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('droppedEnrollments');
+      return raw ? parseInt(raw, 10) || 0 : 0;
+    } catch { return 0; }
+  });
+  const [droppedList, setDroppedList] = useState<Array<{ studentId?: number; studentName?: string; courseId?: number; courseName?: string; deletedAt?: string }>>(() => {
+    try {
+      const raw = localStorage.getItem('droppedEnrollmentsList');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [openDroppedDialog, setOpenDroppedDialog] = useState(false);
   const [openAddDialog, setOpenAddDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [editingEnrollment, setEditingEnrollment] = useState<Enrollment | null>(null);
@@ -250,6 +268,20 @@ const Enrollments = () => {
 
         console.log('[Mapped Enrollments]', mappedEnrollments);
         setEnrollments(mappedEnrollments);
+        // compute counts
+        const completed = mappedEnrollments.filter(e => {
+          const g = e.grade;
+          const n = typeof g === 'number' ? g : (g ? Number(String(g)) : NaN);
+          return Number.isFinite(n) && n >= 100;
+        }).length;
+        const active = mappedEnrollments.filter(e => {
+          const g = e.grade;
+          const n = typeof g === 'number' ? g : (g ? Number(String(g)) : NaN);
+          // active = not completed (no grade or grade < 100)
+          return !(Number.isFinite(n) && n >= 100);
+        }).length;
+        setCompletedCount(completed);
+        setActiveCount(active);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load enrollments');
         setEnrollments([]);
@@ -264,18 +296,38 @@ const Enrollments = () => {
 
   useEffect(() => {
     if (openAddDialog || openEditDialog) {
-      Promise.all([studentsAPI.getAll(), coursesAPI.getAll()])
-        .then(([sRes, cRes]) => {
+      Promise.all([studentsAPI.getAll(), coursesAPI.getAll(), departmentsAPI.getAll()])
+        .then(([sRes, cRes, dRes]) => {
           setStudents(Array.isArray(sRes?.data) ? sRes.data : []);
           setCourses(Array.isArray(cRes?.data) ? cRes.data : []);
+          setDepartments(Array.isArray(dRes?.data) ? dRes.data : []);
         })
-        .catch(() => { setStudents([]); setCourses([]); });
+        .catch(() => { setStudents([]); setCourses([]); setDepartments([]); });
     }
   }, [openAddDialog, openEditDialog]);
 
   const handleOpenAdd = () => {
     setAddStudentId(''); setAddCourseId(''); setAddGrade(''); setFormError(null);
+    setAddDepartmentId('');
     setOpenAddDialog(true);
+  };
+
+  const [addDepartmentId, setAddDepartmentId] = useState<string>('');
+
+  const filterStudentsByDept = (deptId?: number | null) => {
+    if (!deptId) return students;
+    return students.filter((s: Student & { departmentID?: number; departmentId?: number; DepartmentID?: number; DepartmentId?: number; Department?: { departmentID?: number; id?: number } }) => {
+      const sid = s.departmentID ?? s.departmentId ?? s.DepartmentID ?? s.DepartmentId ?? s.Department?.departmentID ?? s.Department?.id;
+      return sid == null ? false : Number(sid) === Number(deptId);
+    });
+  };
+
+  const filterCoursesByDept = (deptId?: number | null) => {
+    if (!deptId) return courses;
+    return courses.filter((c: Course & { departmentID?: number; DepartmentID?: number; departmentId?: number; Department?: { departmentID?: number; id?: number } }) => {
+      const cid = c.departmentID ?? c.DepartmentID ?? c.departmentId ?? c.Department?.departmentID ?? c.Department?.id;
+      return cid == null ? false : Number(cid) === Number(deptId);
+    });
   };
 
   const handleAddSubmit = async (e: React.FormEvent) => {
@@ -354,6 +406,25 @@ const Enrollments = () => {
     setDeletingId(id);
     try {
       await enrollmentsAPI.delete(id);
+      // record this as a dropped enrollment (persist details)
+      const record = {
+        studentId: enrollment.studentId ?? enrollment.studentID,
+        studentName: enrollment.studentName,
+        courseId: enrollment.courseId ?? enrollment.courseID,
+        courseName: enrollment.courseName,
+        deletedAt: new Date().toISOString(),
+      };
+      setDroppedList(prev => {
+        const next = [record, ...prev];
+        try { localStorage.setItem('droppedEnrollmentsList', JSON.stringify(next)); } catch (err) {
+          // Silently ignore localStorage errors
+        }
+        try { localStorage.setItem('droppedEnrollments', String(next.length)); } catch (err) {
+          // Silently ignore localStorage errors
+        }
+        return next;
+      });
+      setDroppedCount(prev => prev + 1);
       await fetchEnrollments();
     } catch (err: unknown) {
       let errorMessage = 'Failed to delete';
@@ -370,6 +441,17 @@ const Enrollments = () => {
       setDeletingId(null);
     }
   };
+
+  // keep droppedCount in sync with droppedList
+  useEffect(() => {
+    try {
+      const n = Array.isArray(droppedList) ? droppedList.length : 0;
+      setDroppedCount(n);
+      localStorage.setItem('droppedEnrollments', String(n));
+    } catch {
+      // Silently ignore localStorage errors
+    }
+  }, [droppedList]);
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] || null;
@@ -557,28 +639,29 @@ const Enrollments = () => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Enrollments</h2>
-          <p className="text-muted-foreground">Manage course registrations</p>
+    <>
+      <div className="space-y-6 animate-fade-in">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Enrollments</h2>
+            <p className="text-muted-foreground">Manage course registrations</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={downloadTemplate}>
+              <Download className="w-4 h-4 mr-2" />
+              Download Template
+            </Button>
+            <Button variant="outline" onClick={() => setOpenBulkDialog(true)}>
+              <Upload className="w-4 h-4 mr-2" />
+              Import Excel
+            </Button>
+            <Button className="bg-accent hover:bg-accent/90 text-accent-foreground" onClick={handleOpenAdd}>
+              <Plus className="w-4 h-4 mr-2" />
+              New Enrollment
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={downloadTemplate}>
-            <Download className="w-4 h-4 mr-2" />
-            Download Template
-          </Button>
-          <Button variant="outline" onClick={() => setOpenBulkDialog(true)}>
-            <Upload className="w-4 h-4 mr-2" />
-            Import Excel
-          </Button>
-          <Button className="bg-accent hover:bg-accent/90 text-accent-foreground" onClick={handleOpenAdd}>
-            <Plus className="w-4 h-4 mr-2" />
-            New Enrollment
-          </Button>
-        </div>
-      </div>
 
       <Dialog open={openAddDialog} onOpenChange={setOpenAddDialog}>
         <DialogContent className="sm:max-w-md">
@@ -587,6 +670,19 @@ const Enrollments = () => {
             {formError && <p className="text-sm text-destructive">{formError}</p>}
             <div className="space-y-2">
               <Label>Student</Label>
+              <div className="mb-2">
+                <Label className="text-xs">Department (filter)</Label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm mt-1"
+                  value={addDepartmentId}
+                  onChange={(e) => setAddDepartmentId(e.target.value)}
+                >
+                  <option value="">— All Departments —</option>
+                  {departments.map((d) => (
+                    <option key={d.departmentID ?? d.id} value={d.departmentID ?? d.id}>{d.name ?? d.Name}</option>
+                  ))}
+                </select>
+              </div>
               <select
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                 value={addStudentId}
@@ -594,7 +690,7 @@ const Enrollments = () => {
                 required
               >
                 <option value="">Select student</option>
-                {students.map((s: Student) => (
+                {filterStudentsByDept(addDepartmentId ? Number(addDepartmentId) : undefined).map((s: Student & { departmentID?: number; departmentId?: number; DepartmentID?: number; DepartmentId?: number; Department?: { departmentID?: number; id?: number } }) => (
                   <option key={s.id ?? s.studentID} value={s.id ?? s.studentID}>
                     {(s.firstMidName ?? s.firstName ?? '')} {(s.lastName ?? '')} ({s.email ?? ''})
                   </option>
@@ -610,7 +706,7 @@ const Enrollments = () => {
                 required
               >
                 <option value="">Select course</option>
-                {courses.map((c: Course) => (
+                {filterCoursesByDept(addDepartmentId ? Number(addDepartmentId) : undefined).map((c: Course & { departmentID?: number; DepartmentID?: number; departmentId?: number; Department?: { departmentID?: number; id?: number } }) => (
                   <option key={c.courseID ?? c.id} value={c.courseID ?? c.id}>
                     {c.title ?? c.courseName ?? c.name ?? ''} (ID: {c.courseID ?? c.id})
                   </option>
@@ -743,7 +839,7 @@ const Enrollments = () => {
               <ClipboardList className="w-5 h-5 text-accent" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">{enrollments.length}</p>
+              <p className="text-2xl font-bold text-foreground">{enrollments.length + droppedCount}</p>
               <p className="text-sm text-muted-foreground">Total</p>
             </div>
           </CardContent>
@@ -754,7 +850,7 @@ const Enrollments = () => {
               <Clock className="w-5 h-5 text-accent" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">0</p>
+              <p className="text-2xl font-bold text-foreground">{activeCount}</p>
               <p className="text-sm text-muted-foreground">Active</p>
             </div>
           </CardContent>
@@ -765,7 +861,7 @@ const Enrollments = () => {
               <CheckCircle className="w-5 h-5 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">0</p>
+              <p className="text-2xl font-bold text-foreground">{completedCount}</p>
               <p className="text-sm text-muted-foreground">Completed</p>
             </div>
           </CardContent>
@@ -776,8 +872,10 @@ const Enrollments = () => {
               <XCircle className="w-5 h-5 text-destructive" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">0</p>
-              <p className="text-sm text-muted-foreground">Dropped</p>
+                <button onClick={() => setOpenDroppedDialog(true)} className="text-left">
+                  <p className="text-2xl font-bold text-foreground">{droppedCount}</p>
+                  <p className="text-sm text-muted-foreground">Dropped</p>
+                </button>
             </div>
           </CardContent>
         </Card>
@@ -896,9 +994,54 @@ const Enrollments = () => {
               </TableBody>
             </Table>
           </div>
-        </CardContent>
-      </Card>
+      </CardContent>
+    </Card>
     </div>
+
+    <Dialog open={openDroppedDialog} onOpenChange={setOpenDroppedDialog}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Dropped Enrollments</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          {droppedList.length === 0 ? (
+            <div className="text-muted-foreground">No dropped enrollments recorded.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Student</TableHead>
+                    <TableHead>Course</TableHead>
+                    <TableHead>Deleted At</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {droppedList.map((r, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell>
+                        <div className="font-medium text-sm">{r.studentName || `Student ${r.studentId ?? 'N/A'}`}</div>
+                        <div className="text-xs text-muted-foreground">ID: {r.studentId ?? 'N/A'}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium text-sm">{r.courseName || `Course ${r.courseId ?? 'N/A'}`}</div>
+                        <div className="text-xs text-muted-foreground">ID: {r.courseId ?? 'N/A'}</div>
+                      </TableCell>
+          <Button variant="outline" onClick={() => { setDroppedList([]); try { localStorage.removeItem('droppedEnrollmentsList'); localStorage.setItem('droppedEnrollments','0'); } catch { /* ignore */ } }}>Clear</Button>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { setDroppedList([]); try { localStorage.removeItem('droppedEnrollmentsList'); localStorage.setItem('droppedEnrollments','0'); } catch { /* ignore error */ } }}>Clear</Button>
+          <Button onClick={() => setOpenDroppedDialog(false)}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };
 

@@ -62,9 +62,9 @@ export const register = (payload: RegisterPayload): Promise<AuthResponse> => {
     Address: payload.address ?? null,
     Company: payload.company ?? null,
   };
-  
+
   console.log('[Register Payload - JSON]', JSON.stringify(backendPayload, null, 2));
-  
+
   return client.post("/api/auth/register", backendPayload)
     .then(res => res.data);
 };
@@ -75,7 +75,55 @@ export const getMe = (): Promise<User> => {
 };
 
 export const updateProfile = (payload: Partial<RegisterPayload>): Promise<User> => {
-  return client.put("/api/auth/profile", payload)
+  // Use FormData if we have a file to upload
+  if (payload.profileImage) {
+    const formData = new FormData();
+
+    if (payload.userName) {
+      const parts = payload.userName.trim().split(/\s+/).filter(Boolean);
+      formData.append('FirstMidName', parts[0] ?? 'User');
+      formData.append('LastName', parts.slice(1).join(' ') || 'User');
+    }
+
+    if (payload.email) formData.append('Email', payload.email);
+    if (payload.phoneNumber) formData.append('PhoneNumber', payload.phoneNumber);
+    if (payload.bio) formData.append('Bio', payload.bio);
+    if (payload.address) formData.append('Address', payload.address);
+    if (payload.company) formData.append('Company', payload.company);
+    if (payload.dateOfBirth) formData.append('DateOfBirth', new Date(payload.dateOfBirth).toISOString());
+    if (payload.departmentId != null) formData.append('DepartmentID', payload.departmentId.toString());
+
+    formData.append('ProfilePhoto', payload.profileImage);
+
+    console.log('[Update Profile - FormData with Image]');
+    return client.put("/api/auth/profile", formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }).then(res => res.data);
+  }
+
+  // Regular JSON payload without file
+  const backendPayload: Record<string, unknown> = {};
+
+  if (payload.userName) {
+    const parts = payload.userName.trim().split(/\s+/).filter(Boolean);
+    backendPayload.FirstMidName = parts[0] ?? 'User';
+    backendPayload.LastName = parts.slice(1).join(' ') || 'User';
+  }
+
+  if (payload.email) backendPayload.Email = payload.email;
+  if (payload.phoneNumber) backendPayload.PhoneNumber = payload.phoneNumber;
+  if (payload.bio) backendPayload.Bio = payload.bio;
+  if (payload.address) backendPayload.Address = payload.address;
+  if (payload.company) backendPayload.Company = payload.company;
+  if (payload.dateOfBirth) backendPayload.DateOfBirth = new Date(payload.dateOfBirth);
+  if (payload.departmentId != null) backendPayload.DepartmentID = payload.departmentId;
+  if (payload.profilePhotoUrl) backendPayload.ProfilePhotoUrl = payload.profilePhotoUrl;
+
+  console.log('[Update Profile - JSON]', JSON.stringify(backendPayload, null, 2));
+
+  return client.put("/api/auth/profile", backendPayload)
     .then(res => res.data);
 };
 

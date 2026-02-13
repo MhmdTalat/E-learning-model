@@ -1,9 +1,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useCallback, useMemo } from 'react';
 import * as authAPI from '@/api/auth';
 
 export interface User {
+  [x: string]: string | number | undefined;
   id: string;
   name?: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   role: 'Admin' | 'Instructor' | 'Student';
   avatar?: string;
@@ -13,6 +17,9 @@ export interface User {
   address?: string;
   dateOfBirth?: string;
   phoneNumber?: string;
+  departmentId?: number;
+  department?: string;
+  enrollmentDate?: string;
 }
 
 interface AuthContextType {
@@ -28,11 +35,16 @@ interface AuthContextType {
     profileImage?: File;
   }) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -45,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     try {
       const response = await authAPI.login(email, password);
       const { token, user: userData } = response;
@@ -56,8 +68,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const userObj: User = {
         id: userData.id || '',
+        name: userData.name || userData.userName || undefined,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
         email: userData.email,
         role: (userData.role as 'Admin' | 'Instructor' | 'Student') || 'Student',
+        profilePhotoUrl: userData.profilePhotoUrl,
+        bio: userData.bio,
+        company: userData.company,
+        address: userData.address,
+        dateOfBirth: userData.dateOfBirth,
+        phoneNumber: userData.phoneNumber,
+        departmentId: userData.departmentId,
+        department: userData.department,
+        enrollmentDate: userData.enrollmentDate,
         avatar: undefined,
       };
 
@@ -66,14 +90,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(userObj);
     } catch (error: unknown) {
       console.error('Login error:', error);
-      const errorMessage = error instanceof Error 
-        ? error.message 
+      const errorMessage = error instanceof Error
+        ? error.message
         : (error as { response?: { data?: { message?: string } } }).response?.data?.message || 'Login failed. Please check your credentials.';
       throw new Error(errorMessage);
     }
-  };
+  }, []);
 
-  const register = async (name: string, email: string, password: string, confirmPassword: string, role: string, departmentId?: number, profileData?: {
+  const register = useCallback(async (name: string, email: string, password: string, confirmPassword: string, role: string, departmentId?: number, profileData?: {
     bio?: string;
     address?: string;
     dateOfBirth?: string;
@@ -103,8 +127,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const userObj: User = {
         id: userData.id || '',
+        name: userData.name || userData.userName || undefined,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
         email: userData.email,
         role: (userData.role as 'Admin' | 'Instructor' | 'Student') || 'Student',
+        profilePhotoUrl: userData.profilePhotoUrl,
+        bio: userData.bio,
+        company: userData.company,
+        address: userData.address,
+        dateOfBirth: userData.dateOfBirth,
+        phoneNumber: userData.phoneNumber,
+        departmentId: userData.departmentId,
+        department: userData.department,
+        enrollmentDate: userData.enrollmentDate,
         avatar: undefined,
       };
 
@@ -113,33 +149,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(userObj);
     } catch (error: unknown) {
       console.error('Register error:', error);
-      const ax = error as { response?: { data?: { message?: string; error?: string; errors?: Record<string, string[]> } } };
-      const data = ax.response?.data;
-      let errorMsg = 'Registration failed. Please try again.';
-      if (data?.message) errorMsg = data.message;
-      else if (data?.error) errorMsg = data.error;
-      else if (data?.errors && typeof data.errors === 'object') {
-        const first = Object.values(data.errors).flat().find(Boolean);
-        if (first) errorMsg = first;
-      }
-      throw new Error(errorMsg);
+      const errorMessage = error instanceof Error
+        ? error.message
+        : (error as { response?: { data?: { message?: string } } }).response?.data?.message || 'Registration failed.';
+      throw new Error(errorMessage);
     }
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setUser(null);
     localStorage.removeItem('user');
     localStorage.removeItem('token');
-  };
+  }, []);
 
-  const value: AuthContextType = {
+  const refreshUser = useCallback(async () => {
+    try {
+      const userData = await authAPI.getMe();
+
+      const userObj: User = {
+        id: userData.id || '',
+        name: userData.name,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        email: userData.email,
+        role: (userData.role as 'Admin' | 'Instructor' | 'Student') || 'Student',
+        profilePhotoUrl: userData.profilePhotoUrl,
+        bio: userData.bio,
+        company: userData.company,
+        address: userData.address,
+        dateOfBirth: userData.dateOfBirth,
+        phoneNumber: userData.phoneNumber,
+        departmentId: userData.departmentId,
+        department: userData.department,
+        enrollmentDate: userData.enrollmentDate,
+        avatar: undefined,
+      };
+
+      localStorage.setItem('user', JSON.stringify(userObj));
+      setUser(userObj);
+    } catch (error) {
+      console.error('Failed to refresh user data:', error);
+      throw error;
+    }
+  }, []);
+
+  const value: AuthContextType = useMemo(() => ({
     user,
     isAuthenticated: !!user,
     loading,
     login,
     register,
     logout,
-  };
+    refreshUser,
+  }), [user, loading, login, register, logout, refreshUser]);
 
   return (
     <AuthContext.Provider value={value}>

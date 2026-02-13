@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { studentsAPI, departmentsAPI } from '@/lib/api';
+import { studentsAPI, departmentsAPI, enrollmentsAPI } from '@/lib/api';
 
 interface Student {
   id?: number;
@@ -46,6 +46,19 @@ interface Student {
   phoneNumber?: string;
   departmentId?: number | null;
   departmentName?: string;
+}
+
+interface Enrollment {
+  id?: number;
+  enrollmentId?: number;
+  enrollmentID?: number;
+  studentId?: number;
+  studentID?: number;
+  courseId?: number;
+  courseID?: number;
+  courseName?: string; // added to fix: Property 'courseName' does not exist on type 'Enrollment'
+  enrollmentDate?: string;
+  grade?: string | number | null;
 }
 
 interface Department {
@@ -83,6 +96,7 @@ const Students = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [students, setStudents] = useState<Student[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openAddDialog, setOpenAddDialog] = useState(false);
@@ -143,7 +157,35 @@ const Students = () => {
   useEffect(() => {
     fetchStudents();
     fetchDepartments();
+    fetchEnrollments();
   }, []);
+
+  const fetchEnrollments = async () => {
+    try {
+      const response = await enrollmentsAPI.getAll();
+      setEnrollments(Array.isArray(response?.data) ? response.data : []);
+    } catch (err) {
+      console.error('Failed to load enrollments', err);
+      setEnrollments([]);
+    }
+  };
+
+  const getStudentEnrollmentSummary = (student: Student) => {
+    const sid = student.studentID ?? student.id;
+    if (sid == null) return { enrolled: 0, completed: 0, avgGrade: null };
+    const studentEnrolls = enrollments.filter(e => (e.studentID ?? e.studentId) === sid);
+    const enrolled = studentEnrolls.length;
+    const completed = studentEnrolls.filter(e => e.grade !== null && e.grade !== undefined && String(e.grade).trim() !== '').length;
+    const grades = studentEnrolls
+      .map(e => {
+        const g = e.grade;
+        const n = typeof g === 'number' ? g : (g ? Number(String(g)) : NaN);
+        return Number.isFinite(n) ? n : null;
+      })
+      .filter((g): g is number => g !== null);
+    const avgGrade = grades.length > 0 ? Math.round((grades.reduce((a, b) => a + b, 0) / grades.length) * 100) / 100 : null;
+    return { enrolled, completed, avgGrade };
+  };
 
   const handleOpenAdd = () => {
     setAddFirstName(''); setAddLastName(''); setAddEmail(''); setAddPhone('');
@@ -437,8 +479,15 @@ const Students = () => {
   };
 
   const getStudentStatus = (student: Student) => {
-    return student.departmentId ? 'Active' : 'Pending';
+    const { enrolled, completed, avgGrade } = getStudentEnrollmentSummary(student);
+    if (enrolled === 0) return 'Pending';
+    // Completed only when avg grade is 100
+    if (avgGrade !== null && avgGrade >= 100) return 'Completed';
+    return 'In-Progress';
   };
+
+  const totalEnrollments = enrollments.length;
+  const graduatedCount = (students || []).filter(s => getStudentStatus(s) === 'Completed').length;
 
   if (loading) {
     return (
@@ -612,7 +661,7 @@ const Students = () => {
               <BookOpen className="w-5 h-5 text-purple-500" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">0</p>
+              <p className="text-2xl font-bold text-foreground">{totalEnrollments}</p>
               <p className="text-sm text-muted-foreground">Enrollments</p>
             </div>
           </CardContent>
@@ -623,7 +672,7 @@ const Students = () => {
               <Users className="w-5 h-5 text-amber-500" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">0</p>
+              <p className="text-2xl font-bold text-foreground">{graduatedCount}</p>
               <p className="text-sm text-muted-foreground">Graduated</p>
             </div>
           </CardContent>
@@ -700,13 +749,110 @@ const Students = () => {
                       <TableCell>
                         <span className="text-sm">{student.departmentName ? student.departmentName : <span className="text-muted-foreground italic">Not assigned</span>}</span>
                       </TableCell>
-                      <TableCell className="text-center">0</TableCell>
-                      <TableCell className="text-center">0</TableCell>
-                      <TableCell className="text-center">
-                        <span className="text-muted-foreground">-</span>
-                      </TableCell>
+                      {(() => {
+                        const { enrolled, completed, avgGrade } = getStudentEnrollmentSummary(student);
+                        const sid = student.studentID ?? student.id;
+                        const studentEnrolls = enrollments.filter(e => (e.studentID ?? e.studentId) === sid);
+
+                        // new helpers for lists
+                        const completedEnrolls = studentEnrolls.filter(e =>
+                          e.grade !== undefined && e.grade !== null && e.grade !== ''
+                        );
+
+                        const activeEnrolls = studentEnrolls.filter(e =>
+                          !completedEnrolls.includes(e)
+                        );
+
+                        return (
+                          <>
+                            <TableCell className="text-center">
+                              {enrolled > 0 ? (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="px-2">
+                                      {enrolled}
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent>
+                                    {studentEnrolls.length === 0 ? (
+                                      <DropdownMenuItem disabled>No courses</DropdownMenuItem>
+                                    ) : (
+                                      studentEnrolls.map(e => (
+                                        <DropdownMenuItem key={e.id ?? e.enrollmentId ?? `${e.courseId}`}>
+                                          {e.courseName ?? `Course ${e.courseId ?? e.courseID ?? ''}`}{e.grade ? ` — ${e.grade}` : ''}
+                                        </DropdownMenuItem>
+                                      ))
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              ) : (
+                                <span>0</span>
+                              )}
+                            </TableCell>
+
+                            {/* Completed: show dropdown list of completed enrollments */}
+                            <TableCell className="text-center">
+                              {completed > 0 ? (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="px-2">
+                                      {completed}
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent>
+                                    {completedEnrolls.length === 0 ? (
+                                      <DropdownMenuItem disabled>No completed courses</DropdownMenuItem>
+                                    ) : (
+                                      completedEnrolls.map(e => (
+                                        <DropdownMenuItem key={e.id ?? e.enrollmentId ?? `${e.courseId}`}>
+                                          {e.courseName ?? `Course ${e.courseId ?? e.courseID ?? ''}`}{e.grade ? ` — ${e.grade}` : ''}
+                                        </DropdownMenuItem>
+                                      ))
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              ) : (
+                                <span>0</span>
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-center">
+                              {avgGrade !== null ? <span className="font-medium">{avgGrade}</span> : <span className="text-muted-foreground">-</span>}
+                            </TableCell>
+                          </>
+                        );
+                      })()}
+
+                      {/* Active / Status column: show badge that opens dropdown with active enrollments */}
                       <TableCell>
-                        <Badge className={getStatusColor(getStudentStatus(student))}>{getStudentStatus(student)}</Badge>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="p-0">
+                              <Badge className={getStatusColor(getStudentStatus(student))}>{getStudentStatus(student)}</Badge>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            {(() => {
+                              const sid = student.studentID ?? student.id;
+                              const studentEnrolls = enrollments.filter(e => (e.studentID ?? e.studentId) === sid);
+                              const completedEnrolls = studentEnrolls.filter(e =>
+                                (e.grade !== undefined && e.grade !== null && e.grade !== '')
+                              );
+                              const activeEnrolls = studentEnrolls.filter(e =>
+                                !completedEnrolls.includes(e)
+                              );
+
+                              if (activeEnrolls.length === 0) {
+                                return <DropdownMenuItem disabled>No active courses</DropdownMenuItem>;
+                              }
+                              return activeEnrolls.map(e => (
+                                <DropdownMenuItem key={e.id ?? e.enrollmentId ?? `${e.courseId}`}>
+                                  {e.courseName ?? `Course ${e.courseId ?? e.courseID ?? ''}`}{e.grade ? ` — ${e.grade}` : ''}
+                                </DropdownMenuItem>
+                              ));
+                            })()}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                       <TableCell>
                         <span className="flex items-center gap-1 text-sm text-muted-foreground">

@@ -9,5 +9,6 @@ namespace ELearningModels.Iservice
         Task<string> ForgotPasswordAsync(string email);
         Task ResetPasswordAsync(ResetPasswordDto dto);
         Task<dynamic> GetCurrentUserAsync(string userId);
+        Task<dynamic> UpdateProfileAsync(string userId, UpdateProfileDto dto);
     }
 }

@@ -7,9 +7,7 @@ namespace ELearningModels.model
     public class Department
     {
         public int DepartmentID { get; set; }
-
-        [Required, StringLength(50)]
-        public string Name { get; set; } = null!;
+        public required string Name { get; set; }
 
         [Column(TypeName = "money")]
         public decimal Budget { get; set; }
@@ -22,5 +20,6 @@ namespace ELearningModels.model
 
         public ICollection<Course> Courses { get; set; } = new List<Course>();
         public ICollection<Instructor> Instructors { get; set; } = new List<Instructor>();
+        public ICollection<ApplicationUser> Students { get; set; } = new List<ApplicationUser>();
     }
 }
